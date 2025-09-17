@@ -44,6 +44,14 @@ OFFICIAL_KD_GAINS = [
     7.5, 7.5, 3.0, 5.5, 0.5, 0.5,  # Right leg
 ]
 
+# FIXED: Default pose from playground training (23 joints)
+DEFAULT_POSE = np.array([
+    0.0, 0.0, 0.0, -1.399999976158142, 0.0, -0.4000000059604645, 
+    0.0, 1.399999976158142, 0.0, 0.4000000059604645, 0.0, 
+    -0.20000000298023224, 0.0, 0.0, 0.4000000059604645, -0.20000000298023224, 0.0, 
+    -0.20000000298023224, 0.0, 0.0, 0.4000000059604645, -0.20000000298023224, 0.0
+], dtype=np.float32)
+
 # Simplified utility functions (replace Booster Gym utils)
 def create_prepare_cmd(low_cmd: LowCmd):
     """Create prepare command for robot initialization."""
@@ -132,14 +140,26 @@ class TimerConfig:
         self.time_step = time_step
 
 class Policy:
-    """MuJoCo Playground policy wrapper with dynamic observation space."""
+    """MuJoCo Playground policy wrapper with FIXED observation space."""
     
     def __init__(self, checkpoint_path):
         self.checkpoint_path = checkpoint_path
         self.policy_fn = None
-        self.obs_size = None
-        self.act_size = None
+        self.obs_size = 80  # FIXED: Playground expects exactly 80 dimensions
+        self.act_size = 22  # FIXED: Playground expects 22 actions (not 23)
         self._load_policy()
+        
+        # FIXED: Track previous action for observation construction
+        self.last_action = np.zeros(22, dtype=np.float32)
+        
+        # FIXED: Track linear velocity from accelerometer integration
+        self.linear_velocity = np.zeros(3, dtype=np.float32)
+        self.last_accel = np.zeros(3, dtype=np.float32)
+        self.last_time = time.time()
+        
+        # FIXED: Gait phase tracking
+        self.gait_frequency = 1.0  # Hz
+        self.gait_phase = 0.0
     
     def _load_policy(self):
         """Load the trained policy and determine observation/action sizes."""
@@ -149,13 +169,10 @@ class Policy:
             from mujoco_playground import registry
             env = registry.load("T1JoystickFlatTerrain")
             
-            # Get observation and action sizes from environment
-            self.obs_size = env.observation_size["state"]
-            self.act_size = env.action_size
-            
-            print(f"📊 Environment info:")
-            print(f"   Observation size: {self.obs_size}")
-            print(f"   Action size: {self.act_size}")
+            # FIXED: Use hardcoded sizes instead of dynamic
+            print(f"�� Environment info:")
+            print(f"   Observation size: {self.obs_size} (FIXED)")
+            print(f"   Action size: {self.act_size} (FIXED)")
             
             # Load the policy
             self.policy_fn = load_trained_policy(self.checkpoint_path, env)
@@ -164,42 +181,66 @@ class Policy:
         except Exception as e:
             print(f"❌ Error loading policy: {e}")
             self.policy_fn = None
-            self.obs_size = None
-            self.act_size = None
     
     def get_policy_interval(self):
         """Get policy inference interval (1/policy_frequency)."""
         return 1.0 / 20.0  # 20Hz policy frequency
     
-    def inference(self, time_now, dof_pos, dof_vel, base_ang_vel, projected_gravity, vx, vy, vyaw):
-        """Run policy inference with dynamic observation space."""
-        if self.policy_fn is None or self.obs_size is None:
+    def update_linear_velocity(self, accel, dt):
+        """FIXED: Update linear velocity from accelerometer integration."""
+        # Simple integration: v = v0 + a * dt
+        self.linear_velocity += accel * dt
+        # Apply some damping to prevent drift
+        self.linear_velocity *= 0.99
+    
+    def update_gait_phase(self, dt):
+        """FIXED: Update gait phase for cos/sin components."""
+        self.gait_phase += dt * self.gait_frequency
+        self.gait_phase = self.gait_phase % 1.0  # Keep in [0, 1]
+    
+    def inference(self, time_now, dof_pos, dof_vel, base_ang_vel, projected_gravity, vx, vy, vyaw, accel):
+        """FIXED: Run policy inference with exact playground observation structure."""
+        if self.policy_fn is None:
             print("⚠️  Policy not loaded, returning zero actions")
-            return np.zeros(B1JointCnt, dtype=np.float32)
+            return np.zeros(22, dtype=np.float32)  # FIXED: 22 actions, not 23
         
         try:
-            # Create observation vector with dynamic size
-            obs = np.zeros(self.obs_size, dtype=np.float32)
+            # FIXED: Update linear velocity from accelerometer
+            dt = time_now - self.last_time
+            self.update_linear_velocity(accel, dt)
+            self.last_time = time_now
             
-            # Basic observation construction (adapt based on actual playground training)
-            # This is a simplified version - you may need to adjust based on your training setup
+            # FIXED: Update gait phase
+            self.update_gait_phase(dt)
             
-            # IMU data (first 6 elements)
-            obs[0:3] = projected_gravity  # Projected gravity
-            obs[3:6] = base_ang_vel       # Angular velocity
+            # FIXED: Construct observation exactly like playground
+            obs = np.zeros(80, dtype=np.float32)
             
-            # Motor states (joint positions and velocities)
-            # Assuming the observation space includes joint states
-            joint_start_idx = 6
-            for i in range(min(B1JointCnt, (self.obs_size - joint_start_idx) // 2)):
-                if joint_start_idx + i*2 + 1 < self.obs_size:
-                    obs[joint_start_idx + i*2] = dof_pos[i]     # Joint position
-                    obs[joint_start_idx + i*2 + 1] = dof_vel[i] # Joint velocity
+            # 1. Linear velocity (3) - from accelerometer integration
+            obs[0:3] = self.linear_velocity
             
-            # Commands (velocity commands)
-            cmd_start_idx = joint_start_idx + min(B1JointCnt, (self.obs_size - joint_start_idx) // 2) * 2
-            if cmd_start_idx + 2 < self.obs_size:
-                obs[cmd_start_idx:cmd_start_idx+3] = [vx, vy, vyaw]
+            # 2. Gyroscope (3) - angular velocity
+            obs[3:6] = base_ang_vel
+            
+            # 3. Gravity vector (3) - in body frame
+            obs[6:9] = projected_gravity
+            
+            # 4. Commands (3) - joystick commands
+            obs[9:12] = [vx, vy, vyaw]
+            
+            # 5. Joint angles relative to default pose (22) - FIXED: subtract default pose
+            joint_angles_relative = dof_pos[:22] - DEFAULT_POSE[:22]  # FIXED: 22 joints
+            obs[12:34] = joint_angles_relative
+            
+            # 6. Joint velocities (22) - FIXED: 22 joints
+            obs[34:56] = dof_vel[:22]
+            
+            # 7. Previous action (22) - FIXED: track previous action
+            obs[56:78] = self.last_action
+            
+            # 8. Gait phase (2) - cos and sin
+            obs[78] = np.cos(2 * np.pi * self.gait_phase)
+            obs[79] = np.sin(2 * np.pi * self.gait_phase)
             
             # Run policy
             obs_jax = jp.array(obs).reshape(1, -1)
@@ -207,23 +248,25 @@ class Policy:
             actions, _ = self.policy_fn({'state': obs_jax}, rng)
             actions = np.array(actions[0])
             
-            # Convert actions to joint targets
-            # Take first B1JointCnt actions or pad/truncate as needed
-            if len(actions) >= B1JointCnt:
-                result = actions[:B1JointCnt].astype(np.float32)
-            else:
-                result = np.zeros(B1JointCnt, dtype=np.float32)
-                result[:len(actions)] = actions.astype(np.float32)
+            # FIXED: Store action for next observation
+            self.last_action[:] = actions
             
-            print(f"🧠 Policy inference: obs_size={self.obs_size}, actions range [{result.min():.3f}, {result.max():.3f}], mean: {result.mean():.3f}")
+            # FIXED: Convert to 23-joint targets for Booster SDK
+            result = np.zeros(23, dtype=np.float32)  # Booster has 23 joints
+            result[:22] = actions.astype(np.float32)  # First 22 from policy
+            # Last joint (index 22) stays at 0
+            
+            print(f"🧠 Policy inference: obs_size=80, actions range [{result.min():.3f}, {result.max():.3f}], mean: {result.mean():.3f}")
             print(f"   Sample actions: {result[:5]}")
+            print(f"   Linear velocity: {self.linear_velocity}")
+            print(f"   Gait phase: {self.gait_phase:.3f}")
             return result
             
         except Exception as e:
             print(f"❌ Error in policy inference: {e}")
             import traceback
             traceback.print_exc()
-            return np.zeros(B1JointCnt, dtype=np.float32)
+            return np.zeros(23, dtype=np.float32)
 
 class Controller:
     def __init__(self, checkpoint_path, robot_ip="192.168.10.102") -> None:
@@ -258,6 +301,7 @@ class Controller:
     def _init_low_state_values(self):
         self.base_ang_vel = np.zeros(3, dtype=np.float32)
         self.projected_gravity = np.zeros(3, dtype=np.float32)
+        self.accelerometer = np.zeros(3, dtype=np.float32)  # FIXED: Add accelerometer
         self.dof_pos = np.zeros(B1JointCnt, dtype=np.float32)
         self.dof_vel = np.zeros(B1JointCnt, dtype=np.float32)
 
@@ -298,6 +342,8 @@ class Controller:
                 np.array([0.0, 0.0, -1.0]),
             )
             self.base_ang_vel[:] = low_state_msg.imu_state.gyro
+            # FIXED: Extract accelerometer data
+            self.accelerometer[:] = low_state_msg.imu_state.accelerometer
             for i, motor in enumerate(low_state_msg.motor_state_serial):
                 self.dof_pos[i] = motor.q
                 self.dof_vel[i] = motor.dq
@@ -373,6 +419,7 @@ class Controller:
         print(f"   dof_vel range: [{self.dof_vel.min():.3f}, {self.dof_vel.max():.3f}]")
         print(f"   base_ang_vel: {self.base_ang_vel}")
         print(f"   projected_gravity: {self.projected_gravity}")
+        print(f"   accelerometer: {self.accelerometer}")
 
         self.dof_target[:] = self.policy.inference(
             time_now=time_now,
@@ -383,6 +430,7 @@ class Controller:
             vx=self.remoteControlService.get_vx_cmd(),
             vy=self.remoteControlService.get_vy_cmd(),
             vyaw=self.remoteControlService.get_vyaw_cmd(),
+            accel=self.accelerometer,  # FIXED: Pass accelerometer
         )
 
         print(f"🎯 New dof_target range: [{self.dof_target.min():.3f}, {self.dof_target.max():.3f}]")
