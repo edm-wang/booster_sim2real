@@ -41,6 +41,8 @@ def load_trained_policy(checkpoint_dir: str, env):
     
     # Load checkpoint
     checkpoint_path = Path(checkpoint_dir) / "final_model"
+    # Convert to absolute path for Orbax
+    checkpoint_path = checkpoint_path.resolve()
     orbax_checkpointer = orbax.PyTreeCheckpointer()
     checkpoint = orbax_checkpointer.restore(str(checkpoint_path))
     normalizer_params, policy_params = checkpoint[:2]
