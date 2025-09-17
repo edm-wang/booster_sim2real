@@ -24,7 +24,7 @@ from booster_robotics_sdk_python import (
 import jax
 import jax.numpy as jp
 from utils.brax_utils import load_trained_policy
-from observation_plotter import init_plotter, update_plotter, stop_plotter
+from observation_writer import write_observation
 
 # Official motor gains from Booster SDK examples
 OFFICIAL_KP_GAINS = [
@@ -157,6 +157,13 @@ class Policy:
         self.linear_velocity = np.zeros(3, dtype=np.float32)
         self.last_accel = np.zeros(3, dtype=np.float32)
         self.last_time = time.time()
+        # NEW: Acceleration bias calibration state
+        self.accel_bias = None  # type: np.ndarray | None
+        self.accel_calibrated = False
+        # NEW: Velocity in world frame for improved integration
+        self.world_velocity = np.zeros(3, dtype=np.float32)
+        # NEW: Current orientation as rpy (set by controller)
+        self.current_rpy = None  # type: np.ndarray | None
         
         # FIXED: Gait phase tracking for both feet (4D)
         self.gait_frequency = 1.0  # Hz
@@ -189,11 +196,88 @@ class Policy:
         return 1.0 / 20.0  # 20Hz policy frequency
     
     def update_linear_velocity(self, accel, dt):
-        """FIXED: Update linear velocity from accelerometer integration."""
-        # Simple integration: v = v0 + a * dt
-        self.linear_velocity += accel * dt
-        # Apply some damping to prevent drift
+        """Update linear velocity from accelerometer integration using bias-corrected accel.
+
+        Calibrate bias on first valid sample and skip integration that cycle.
+        """
+        if dt <= 0.0:
+            return
+        # Calibrate on first use if not calibrated
+        if not self.accel_calibrated or self.accel_bias is None:
+            self.accel_bias = np.array(accel, dtype=np.float32)
+            self.accel_calibrated = True
+            return
+        # Bias-corrected acceleration in body frame
+        corrected_accel = accel - self.accel_bias
+        # Deadband to suppress noise
+        corrected_accel = np.where(np.abs(corrected_accel) < 0.05, 0.0, corrected_accel)
+        # Integrate velocity
+        self.linear_velocity += corrected_accel * dt
+        # Damping to reduce drift
         self.linear_velocity *= 0.99
+
+    def reset_linear_velocity(self, accel: np.ndarray | None = None):
+        """Zero linear velocity and optionally calibrate accelerometer bias.
+
+        If accel is provided, we record it as the bias so that the current
+        accelerometer reading (including gravity projection due to tilt)
+        becomes the new zero.
+        """
+        self.linear_velocity[:] = 0.0
+        if accel is not None:
+            self.accel_bias = np.array(accel, dtype=np.float32)
+            self.accel_calibrated = True
+        else:
+            # Next update will calibrate using first available accel sample
+            self.accel_bias = None
+            self.accel_calibrated = False
+        self.world_velocity[:] = 0.0
+        self.last_time = time.time()
+
+    @staticmethod
+    def _rpy_to_rotation_matrices(roll: float, pitch: float, yaw: float):
+        """Compute body<->world rotation matrices from roll, pitch, yaw.
+
+        Returns (R_body_to_world, R_world_to_body).
+        Convention: R_body_to_world = Rz(yaw) @ Ry(pitch) @ Rx(roll)
+        """
+        cr, sr = np.cos(roll), np.sin(roll)
+        cp, sp = np.cos(pitch), np.sin(pitch)
+        cy, sy = np.cos(yaw), np.sin(yaw)
+
+        Rx = np.array([[1, 0, 0],
+                       [0, cr, -sr],
+                       [0, sr, cr]], dtype=np.float32)
+        Ry = np.array([[cp, 0, sp],
+                       [0, 1, 0],
+                       [-sp, 0, cp]], dtype=np.float32)
+        Rz = np.array([[cy, -sy, 0],
+                       [sy, cy, 0],
+                       [0, 0, 1]], dtype=np.float32)
+
+        R_body_to_world = Rz @ Ry @ Rx
+        R_world_to_body = R_body_to_world.T
+        return R_body_to_world, R_world_to_body
+
+    def update_linear_velocity_v2(self, raw_accel: np.ndarray, rpy: np.ndarray, dt: float) -> np.ndarray:
+        """Physically-improved velocity integrator using gravity removal and world-frame integration."""
+        if dt <= 0.0:
+            return self.linear_velocity
+
+        R_bw, R_wb = self._rpy_to_rotation_matrices(rpy[0], rpy[1], rpy[2])
+
+        g_world = np.array([0.0, 0.0, -9.81], dtype=np.float32)
+        g_body = R_wb @ g_world
+
+        pure_accel_body = raw_accel.astype(np.float32) - g_body
+        pure_accel_body = np.where(np.abs(pure_accel_body) < 0.05, 0.0, pure_accel_body)
+
+        pure_accel_world = R_bw @ pure_accel_body
+        self.world_velocity += pure_accel_world * dt
+        self.world_velocity *= 0.995
+
+        body_velocity = R_wb @ self.world_velocity
+        return body_velocity
     
     def update_gait_phase(self, dt):
         """FIXED: Update gait phase for both feet (4D)."""
@@ -209,7 +293,11 @@ class Policy:
         """FIXED: Construct observation exactly like playground (85 dimensions) for plotting."""
         # FIXED: Update linear velocity from accelerometer
         dt = time_now - self.last_time
-        self.update_linear_velocity(accel, dt)
+        if self.current_rpy is not None:
+            body_vel = self.update_linear_velocity_v2(accel, self.current_rpy, dt)
+            self.linear_velocity[:] = body_vel
+        else:
+            self.update_linear_velocity(accel, dt)
         self.last_time = time_now
         
         # FIXED: Update gait phase for both feet
@@ -310,14 +398,14 @@ class Controller:
         self.inference_count = 0
         self.publish_count = 0
         
-        # Initialize observation plotter
-        print("📊 Initializing observation plotter...")
-        try:
-            self.plotter = init_plotter()
-            print("✅ Observation plotter initialized successfully")
-        except Exception as e:
-            print(f"⚠️  Warning: Failed to initialize plotter: {e}")
-            self.plotter = None
+        # Initialize observation data writer
+        self.obs_data_file = "/tmp/robot_obs.json"
+        print(f"📊 Observation data will be written to: {self.obs_data_file}")
+        print("🌐 To view plots, run: python standalone_web_plotter.py")
+        
+        # Start observation writing thread
+        self.obs_writer_thread = None
+        self.start_observation_writer()
 
 
     def _init_timer(self):
@@ -337,6 +425,65 @@ class Controller:
         self.filtered_dof_target = np.zeros(B1JointCnt, dtype=np.float32)
         self.dof_pos_latest = np.zeros(B1JointCnt, dtype=np.float32)
         print(f"📊 State buffers initialized: {B1JointCnt} joints")
+
+    def start_observation_writer(self):
+        """Start the observation writing thread."""
+        print("📊 Starting observation writer thread...")
+        self.obs_writer_thread = threading.Thread(target=self._observation_writer_loop, daemon=True)
+        self.obs_writer_thread.start()
+        print("✅ Observation writer thread started")
+
+    def _observation_writer_loop(self):
+        """Continuously write observation data for web plotter."""
+        print("📊 Observation writer loop started")
+        obs_write_count = 0
+        
+        while self.running:
+            try:
+                time_now = self.timer.get_time()
+                
+                # Construct observation
+                obs = self.policy._construct_observation(
+                    time_now=time_now,
+                    dof_pos=self.dof_pos,
+                    dof_vel=self.dof_vel,
+                    base_ang_vel=self.base_ang_vel,
+                    projected_gravity=self.projected_gravity,
+                    vx=self.remoteControlService.get_vx_cmd(),
+                    vy=self.remoteControlService.get_vy_cmd(),
+                    vyaw=self.remoteControlService.get_vyaw_cmd(),
+                    accel=self.accelerometer,
+                )
+                
+                # Write observation data
+                write_observation(obs, time_now, self.obs_data_file)
+                obs_write_count += 1
+                
+                # Debug: Print observation update every 50 writes (5 seconds at 10Hz)
+                if obs_write_count % 50 == 0:
+                    print(f"📊 Observation data written {obs_write_count} times")
+                    print(f"   Linear velocity: {obs[0:3]}")
+                    print(f"   Angular velocity: {obs[3:6]}")
+                    print(f"   Joint pos range: [{obs[16:39].min():.3f}, {obs[16:39].max():.3f}]")
+                    print(f"   Gait phase: {obs[12:16]}")
+                    # Print accelerations (raw and bias-corrected, not added to obs)
+                    try:
+                        raw_acc = self.accelerometer
+                        if getattr(self.policy, 'accel_calibrated', False) and getattr(self.policy, 'accel_bias', None) is not None:
+                            corrected_acc = raw_acc - self.policy.accel_bias
+                        else:
+                            corrected_acc = raw_acc
+                        print(f"   Accel raw: {raw_acc}")
+                        print(f"   Accel corrected: {corrected_acc}")
+                    except Exception as _:
+                        pass
+                
+                # Write at 10Hz (every 100ms)
+                time.sleep(0.1)
+                
+            except Exception as e:
+                print(f"⚠️  Warning: Failed to write observation data: {e}")
+                time.sleep(0.1)
 
     def _init_communication(self) -> None:
         try:
@@ -369,9 +516,12 @@ class Controller:
                 low_state_msg.imu_state.rpy[2],
                 np.array([0.0, 0.0, -1.0]),
             )
+            # Provide current rpy to policy for improved velocity integration
+            if hasattr(self, "policy") and hasattr(self.policy, "current_rpy"):
+                self.policy.current_rpy = np.array(low_state_msg.imu_state.rpy, dtype=np.float32)
             self.base_ang_vel[:] = low_state_msg.imu_state.gyro
             # FIXED: Extract accelerometer data
-            self.accelerometer[:] = low_state_msg.imu_state.accelerometer
+            self.accelerometer[:] = low_state_msg.imu_state.acc
             for i, motor in enumerate(low_state_msg.motor_state_serial):
                 self.dof_pos[i] = motor.q
                 self.dof_vel[i] = motor.dq
@@ -384,10 +534,18 @@ class Controller:
         print("🧹 Cleaning up resources...")
         
         
-        # Stop and cleanup plotter
-        if hasattr(self, "plotter") and self.plotter:
-            print("📊 Stopping observation plotter...")
-            stop_plotter()
+        # Stop observation writer thread
+        if hasattr(self, "obs_writer_thread") and self.obs_writer_thread:
+            print("📊 Stopping observation writer thread...")
+            self.obs_writer_thread.join(timeout=2.0)
+        
+        # Clean up observation data file
+        if hasattr(self, "obs_data_file") and os.path.exists(self.obs_data_file):
+            print(f"🧹 Cleaning up observation data file: {self.obs_data_file}")
+            try:
+                os.remove(self.obs_data_file)
+            except:
+                pass
         
         self.remoteControlService.close() if hasattr(self.remoteControlService, 'close') else None
         if hasattr(self, "low_cmd_publisher"):
@@ -410,6 +568,9 @@ class Controller:
             self.dof_target[i] = self.low_cmd.motor_cmd[i].q
             self.filtered_dof_target[i] = self.low_cmd.motor_cmd[i].q
         self._send_cmd(self.low_cmd)
+        
+        # Reset linear velocity and calibrate accel bias to current IMU
+        self.policy.reset_linear_velocity(self.accelerometer)
         send_time = time.perf_counter()
         print(f"📤 Send cmd took {(send_time - start_time)*1000:.4f} ms")
         self.client.ChangeMode(RobotMode.kCustom)
@@ -438,23 +599,6 @@ class Controller:
 
     def run(self):
         time_now = self.timer.get_time()
-        
-        # Always update plotter with current observation (regardless of mode)
-        try:
-            obs = self.policy._construct_observation(
-                time_now=time_now,
-                dof_pos=self.dof_pos,
-                dof_vel=self.dof_vel,
-                base_ang_vel=self.base_ang_vel,
-                projected_gravity=self.projected_gravity,
-                vx=self.remoteControlService.get_vx_cmd(),
-                vy=self.remoteControlService.get_vy_cmd(),
-                vyaw=self.remoteControlService.get_vyaw_cmd(),
-                accel=self.accelerometer,
-            )
-            update_plotter(obs, time_now)
-        except Exception as e:
-            print(f"⚠️  Warning: Failed to update plotter: {e}")
         
         # Only run policy inference if it's time for it
         if time_now < self.next_inference_time:
