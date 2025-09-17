@@ -24,6 +24,7 @@ from booster_robotics_sdk_python import (
 import jax
 import jax.numpy as jp
 from utils.brax_utils import load_trained_policy
+from observation_plotter import init_plotter, update_plotter, stop_plotter
 
 # Official motor gains from Booster SDK examples
 OFFICIAL_KP_GAINS = [
@@ -145,21 +146,22 @@ class Policy:
     def __init__(self, checkpoint_path):
         self.checkpoint_path = checkpoint_path
         self.policy_fn = None
-        self.obs_size = 80  # FIXED: Playground expects exactly 80 dimensions
-        self.act_size = 22  # FIXED: Playground expects 22 actions (not 23)
+        self.obs_size = 85  # FIXED: Playground expects exactly 85 dimensions (3+3+3+3+4+23+23+23)
+        self.act_size = 23  # FIXED: Playground expects 23 actions (23 joints)
         self._load_policy()
         
         # FIXED: Track previous action for observation construction
-        self.last_action = np.zeros(22, dtype=np.float32)
+        self.last_action = np.zeros(23, dtype=np.float32)
         
         # FIXED: Track linear velocity from accelerometer integration
         self.linear_velocity = np.zeros(3, dtype=np.float32)
         self.last_accel = np.zeros(3, dtype=np.float32)
         self.last_time = time.time()
         
-        # FIXED: Gait phase tracking
+        # FIXED: Gait phase tracking for both feet (4D)
         self.gait_frequency = 1.0  # Hz
-        self.gait_phase = 0.0
+        self.gait_phase_left = 0.0
+        self.gait_phase_right = 0.0
     
     def _load_policy(self):
         """Load the trained policy and determine observation/action sizes."""
@@ -170,7 +172,7 @@ class Policy:
             env = registry.load("T1JoystickFlatTerrain")
             
             # FIXED: Use hardcoded sizes instead of dynamic
-            print(f"�� Environment info:")
+            print(f"📊 Environment info:")
             print(f"   Observation size: {self.obs_size} (FIXED)")
             print(f"   Action size: {self.act_size} (FIXED)")
             
@@ -194,53 +196,70 @@ class Policy:
         self.linear_velocity *= 0.99
     
     def update_gait_phase(self, dt):
-        """FIXED: Update gait phase for cos/sin components."""
-        self.gait_phase += dt * self.gait_frequency
-        self.gait_phase = self.gait_phase % 1.0  # Keep in [0, 1]
+        """FIXED: Update gait phase for both feet (4D)."""
+        # Update both feet with slight phase offset
+        self.gait_phase_left += dt * self.gait_frequency
+        self.gait_phase_right += dt * self.gait_frequency + 0.5  # 180 degree offset
+        
+        # Keep phases in [0, 1]
+        self.gait_phase_left = self.gait_phase_left % 1.0
+        self.gait_phase_right = self.gait_phase_right % 1.0
+    
+    def _construct_observation(self, time_now, dof_pos, dof_vel, base_ang_vel, projected_gravity, vx, vy, vyaw, accel):
+        """FIXED: Construct observation exactly like playground (85 dimensions) for plotting."""
+        # FIXED: Update linear velocity from accelerometer
+        dt = time_now - self.last_time
+        self.update_linear_velocity(accel, dt)
+        self.last_time = time_now
+        
+        # FIXED: Update gait phase for both feet
+        self.update_gait_phase(dt)
+        
+        # FIXED: Construct observation exactly like playground (85 dimensions)
+        obs = np.zeros(85, dtype=np.float32)
+        
+        # 1. Linear velocity (3) - from accelerometer integration
+        obs[0:3] = self.linear_velocity
+        
+        # 2. Gyroscope (3) - angular velocity
+        obs[3:6] = base_ang_vel
+        
+        # 3. Gravity vector (3) - in body frame
+        obs[6:9] = projected_gravity
+        
+        # 4. Commands (3) - joystick commands
+        obs[9:12] = [vx, vy, vyaw]
+        
+        # 5. Gait phase (4) - cos/sin for both feet
+        obs[12] = np.cos(2 * np.pi * self.gait_phase_left)
+        obs[13] = np.sin(2 * np.pi * self.gait_phase_left)
+        obs[14] = np.cos(2 * np.pi * self.gait_phase_right)
+        obs[15] = np.sin(2 * np.pi * self.gait_phase_right)
+        
+        # 6. Joint angles relative to default pose (23)
+        joint_angles_relative = dof_pos[:23] - DEFAULT_POSE[:23]
+        obs[16:39] = joint_angles_relative
+        
+        # 7. Joint velocities (23)
+        obs[39:62] = dof_vel[:23]
+        
+        # 8. Previous action (23)
+        obs[62:85] = self.last_action
+        
+        return obs
     
     def inference(self, time_now, dof_pos, dof_vel, base_ang_vel, projected_gravity, vx, vy, vyaw, accel):
         """FIXED: Run policy inference with exact playground observation structure."""
         if self.policy_fn is None:
             print("⚠️  Policy not loaded, returning zero actions")
-            return np.zeros(22, dtype=np.float32)  # FIXED: 22 actions, not 23
+            return np.zeros(23, dtype=np.float32), np.zeros(85, dtype=np.float32)  # Return actions and obs
         
         try:
-            # FIXED: Update linear velocity from accelerometer
-            dt = time_now - self.last_time
-            self.update_linear_velocity(accel, dt)
-            self.last_time = time_now
-            
-            # FIXED: Update gait phase
-            self.update_gait_phase(dt)
-            
-            # FIXED: Construct observation exactly like playground
-            obs = np.zeros(80, dtype=np.float32)
-            
-            # 1. Linear velocity (3) - from accelerometer integration
-            obs[0:3] = self.linear_velocity
-            
-            # 2. Gyroscope (3) - angular velocity
-            obs[3:6] = base_ang_vel
-            
-            # 3. Gravity vector (3) - in body frame
-            obs[6:9] = projected_gravity
-            
-            # 4. Commands (3) - joystick commands
-            obs[9:12] = [vx, vy, vyaw]
-            
-            # 5. Joint angles relative to default pose (22) - FIXED: subtract default pose
-            joint_angles_relative = dof_pos[:22] - DEFAULT_POSE[:22]  # FIXED: 22 joints
-            obs[12:34] = joint_angles_relative
-            
-            # 6. Joint velocities (22) - FIXED: 22 joints
-            obs[34:56] = dof_vel[:22]
-            
-            # 7. Previous action (22) - FIXED: track previous action
-            obs[56:78] = self.last_action
-            
-            # 8. Gait phase (2) - cos and sin
-            obs[78] = np.cos(2 * np.pi * self.gait_phase)
-            obs[79] = np.sin(2 * np.pi * self.gait_phase)
+            # Construct observation using the dedicated method
+            obs = self._construct_observation(
+                time_now, dof_pos, dof_vel, base_ang_vel, 
+                projected_gravity, vx, vy, vyaw, accel
+            )
             
             # Run policy
             obs_jax = jp.array(obs).reshape(1, -1)
@@ -253,20 +272,19 @@ class Policy:
             
             # FIXED: Convert to 23-joint targets for Booster SDK
             result = np.zeros(23, dtype=np.float32)  # Booster has 23 joints
-            result[:22] = actions.astype(np.float32)  # First 22 from policy
-            # Last joint (index 22) stays at 0
+            result[:] = actions.astype(np.float32)  # All 23 actions from policy
             
-            print(f"🧠 Policy inference: obs_size=80, actions range [{result.min():.3f}, {result.max():.3f}], mean: {result.mean():.3f}")
+            print(f"🧠 Policy inference: obs_size=85, actions range [{result.min():.3f}, {result.max():.3f}], mean: {result.mean():.3f}")
             print(f"   Sample actions: {result[:5]}")
             print(f"   Linear velocity: {self.linear_velocity}")
-            print(f"   Gait phase: {self.gait_phase:.3f}")
-            return result
+            print(f"   Gait phase left: {self.gait_phase_left:.3f}, right: {self.gait_phase_right:.3f}")
+            return result, obs
             
         except Exception as e:
             print(f"❌ Error in policy inference: {e}")
             import traceback
             traceback.print_exc()
-            return np.zeros(23, dtype=np.float32)
+            return np.zeros(23, dtype=np.float32), np.zeros(85, dtype=np.float32)
 
 class Controller:
     def __init__(self, checkpoint_path, robot_ip="192.168.10.102") -> None:
@@ -291,6 +309,16 @@ class Controller:
         self.publish_lock = threading.Lock()
         self.inference_count = 0
         self.publish_count = 0
+        
+        # Initialize observation plotter
+        print("📊 Initializing observation plotter...")
+        try:
+            self.plotter = init_plotter()
+            print("✅ Observation plotter initialized successfully")
+        except Exception as e:
+            print(f"⚠️  Warning: Failed to initialize plotter: {e}")
+            self.plotter = None
+
 
     def _init_timer(self):
         self.timer = Timer(TimerConfig(time_step=0.01))  # 100Hz control
@@ -354,6 +382,13 @@ class Controller:
     def cleanup(self) -> None:
         """Cleanup resources."""
         print("🧹 Cleaning up resources...")
+        
+        
+        # Stop and cleanup plotter
+        if hasattr(self, "plotter") and self.plotter:
+            print("📊 Stopping observation plotter...")
+            stop_plotter()
+        
         self.remoteControlService.close() if hasattr(self.remoteControlService, 'close') else None
         if hasattr(self, "low_cmd_publisher"):
             self.low_cmd_publisher.CloseChannel()
@@ -389,6 +424,7 @@ class Controller:
                 break
             time.sleep(0.1)
         print("🤖 Starting RL gait sequence...")
+        
         create_first_frame_rl_cmd(self.low_cmd)
         self._send_cmd(self.low_cmd)
         self.next_inference_time = self.timer.get_time()
@@ -402,6 +438,25 @@ class Controller:
 
     def run(self):
         time_now = self.timer.get_time()
+        
+        # Always update plotter with current observation (regardless of mode)
+        try:
+            obs = self.policy._construct_observation(
+                time_now=time_now,
+                dof_pos=self.dof_pos,
+                dof_vel=self.dof_vel,
+                base_ang_vel=self.base_ang_vel,
+                projected_gravity=self.projected_gravity,
+                vx=self.remoteControlService.get_vx_cmd(),
+                vy=self.remoteControlService.get_vy_cmd(),
+                vyaw=self.remoteControlService.get_vyaw_cmd(),
+                accel=self.accelerometer,
+            )
+            update_plotter(obs, time_now)
+        except Exception as e:
+            print(f"⚠️  Warning: Failed to update plotter: {e}")
+        
+        # Only run policy inference if it's time for it
         if time_now < self.next_inference_time:
             time.sleep(0.001)
             return
@@ -421,7 +476,8 @@ class Controller:
         print(f"   projected_gravity: {self.projected_gravity}")
         print(f"   accelerometer: {self.accelerometer}")
 
-        self.dof_target[:] = self.policy.inference(
+        # Run policy inference and get actions
+        actions, _ = self.policy.inference(
             time_now=time_now,
             dof_pos=self.dof_pos,
             dof_vel=self.dof_vel,
@@ -432,6 +488,8 @@ class Controller:
             vyaw=self.remoteControlService.get_vyaw_cmd(),
             accel=self.accelerometer,  # FIXED: Pass accelerometer
         )
+        
+        self.dof_target[:] = actions
 
         print(f"🎯 New dof_target range: [{self.dof_target.min():.3f}, {self.dof_target.max():.3f}]")
         print(f"   Sample targets: {self.dof_target[:5]}")
