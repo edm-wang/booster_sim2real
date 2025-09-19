@@ -1,0 +1,43 @@
+{
+  "os":  "Linux-6.8.0-79-generic-x86_64-with-glibc2.17",
+  "python":  "CPython 3.8.20",
+  "startedAt":  "2025-09-17T02:28:58.364266Z",
+  "args":  [
+    "--task=T1"
+  ],
+  "program":  "train.py",
+  "codePath":  "train.py",
+  "codePathLocal":  "train.py",
+  "git":  {
+    "remote":  "https://github.com/BoosterRobotics/booster_gym.git",
+    "commit":  "687a33d08b08875fe45dc8d91b54db83766df8b9"
+  },
+  "email":  "theprabab@gmail.com",
+  "root":  "logs/2025-09-16-19-28-58",
+  "host":  "romela-4090",
+  "executable":  "/home/romela/miniconda3/envs/isaac2/bin/python",
+  "cpu_count":  24,
+  "cpu_count_logical":  32,
+  "gpu":  "NVIDIA GeForce RTX 4090",
+  "gpu_count":  1,
+  "disk":  {
+    "/":  {
+      "total":  "1966848458752",
+      "used":  "983916937216"
+    }
+  },
+  "memory":  {
+    "total":  "33341800448"
+  },
+  "gpu_nvidia":  [
+    {
+      "name":  "NVIDIA GeForce RTX 4090",
+      "memoryTotal":  "25757220864",
+      "cudaCores":  16384,
+      "architecture":  "Ada",
+      "uuid":  "GPU-3b4169a3-c16f-18f8-8c9d-f2c935eca1d4"
+    }
+  ],
+  "cudaVersion":  "12.4",
+  "writerId":  "wt5gp0dziolplt1vask6oppnse64s3mq"
+}
