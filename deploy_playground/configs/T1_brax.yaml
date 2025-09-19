@@ -1,0 +1,88 @@
+# Brax-based playground policy configuration
+# This config is adapted for the Brax implementation with dynamic observation space
+
+common:
+  dt: 0.002
+  stiffness: [
+    20, 20,
+    20, 20, 20, 20,
+    20, 20, 20, 20,
+    200,
+    200, 200, 200, 200, 50, 50,
+    200, 200, 200, 200, 50, 50
+  ]
+  damping: [
+    0.2, 0.2,
+    0.5, 0.5, 0.5, 0.5,
+    0.5, 0.5, 0.5, 0.5,
+    5,
+    5, 5, 5, 5, 3, 3,
+    5, 5, 5, 5, 3, 3
+  ]
+  default_qpos: [
+    0, 0,
+    0.2, -1.35, 0, -0.5,
+    0.2, 1.35, 0, 0.5, 
+    0,
+    -0.2, 0, 0, 0.4, -0.25, 0,
+    -0.2, 0, 0, 0.4, -0.25, 0
+  ]
+  torque_limit: [
+    7, 7,
+    10, 10, 10, 10,
+    10, 10, 10, 10,
+    30,
+    60, 25, 30, 60, 24, 15,
+    60, 25, 30, 60, 24, 15
+  ]
+
+# Brax policy configuration - observation/action sizes are determined dynamically
+policy:
+  policy_path: "./checkpoint"  # Path to playground checkpoint
+  policy_type: "brax"          # Use Brax implementation
+  gait_frequency: 1.0          # 1Hz gait frequency
+  
+  # Note: num_observations and num_actions are determined dynamically from environment
+  # The Brax implementation will read these from the environment and checkpoint
+  
+  # Normalization parameters (may need adjustment based on playground training)
+  normalization:
+    gravity: 1.0
+    lin_vel: 1.0
+    ang_vel: 1.0
+    dof_pos: 1.0
+    dof_vel: 0.1
+    clip_actions: 1.0
+
+  control:
+    action_scale: 1.0
+    decimation: 10
+
+mech:
+  parallel_mech_indexes: [15, 16, 21, 22]
+
+prepare:
+  stiffness: [
+    5., 5.,
+    40., 50., 20., 10.,
+    40., 50., 20., 10.,
+    100., 
+    350., 350., 180., 350., 450., 450.,
+    350., 350., 180., 350., 450., 450.,
+  ]
+  damping: [
+    0.1, 0.1,
+    0.5, 1.5, 0.2, 0.2,
+    0.5, 1.5, 0.2, 0.2,
+    5.0,
+    7.5, 7.5, 3., 5.5, 0.5, 0.5,
+    7.5, 7.5, 3., 5.5, 0.5, 0.5,
+  ]
+  default_qpos: [
+    0.0,  0.0,
+    0.25, -1.4, 0.0, -0.5,
+    0.25, 1.4, 0.0, 0.5,
+    0.0,
+    -0.1, 0.0, 0.0, 0.2, -0.1, 0.0,
+    -0.1, 0.0, 0.0, 0.2, -0.1, 0.0,
+  ]
