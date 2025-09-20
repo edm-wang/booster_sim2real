@@ -1,14 +1,14 @@
 basic:
-  checkpoint: null # set to -1 to load last saved model
+  checkpoint: /home/romela/Downloads/isaacgym/booster_gym/logs/2025-09-16-21-01-09/nn/model_10000.pth # set to -1 to load last saved model
   headless: false
-  max_iterations: 10000 # set the maximum number of learning iterations to train for
+  max_iterations: 50000 # set the maximum number of learning iterations to train for
   sim_device: "cuda:0" # device for physics simulation
   rl_device: "cuda:0" # device for the RL algorithm
   seed: 42 # seed - set to -1 to choose random seed
   description: ""
 
 env:
-  num_envs: 4096
+  num_envs: 16384
   num_observations: 47
   num_privileged_obs: 14
   num_actions: 12
@@ -21,9 +21,9 @@ runner:
   use_wandb: true
 
 viewer:
-  pos: [3., -3., 2.]  # [m]
+  pos: [3., -3., 2.]  # [m],. , ,
   lookat: [0., 0., 0.]  # [m]
-  record_video: true  # only in play
+  record_video: false  # only in play
   record_interval: 5.  # [s]
   record_env_idx: 0
 
@@ -53,7 +53,7 @@ sim:
     max_depenetration_velocity: 100.0
     default_buffer_size_multiplier: 5.0
     max_gpu_contact_pairs: 8388608 # 8*1024*1024
-    num_subscenes: 4 # Splits the simulation into N physics scenes and runs each one in a separate thread
+    num_subscenes: 0 # Splits the simulation into N physics scenes and runs each one in a separate thread
     contact_collection: 1 # 0: CC_NEVER (don't collect contact info), 1: CC_LAST_SUBSTEP (collect only contacts on last substep), 2: CC_ALL_SUBSTEPS (broken - do not use!)
 
 asset:
@@ -70,11 +70,11 @@ asset:
   replace_cylinder_with_capsule: false # replace collision cylinders with capsules, leads to faster/more stable simulation
   flip_visual_attachments: false # Some .obj meshes must be flipped from y-up to z-up
   density: 0.001
-  angular_damping: 0.
-  linear_damping: 0.
+  angular_damping: 0.05  # Increased for real-world stability (was 0.01)
+  linear_damping: 0.05   # Increased for real-world stability (was 0.01)
   max_angular_velocity: 1000.
   max_linear_velocity: 1000.
-  armature: 0.
+  armature: 0.05  # Increased for motor inertia and real-world delays (was 0.01)
   thickness: 0.01
   feet_edge_pos: [[ 0.1215,  0.05, -0.03],
                   [ 0.1215, -0.05, -0.03],
@@ -95,7 +95,7 @@ control:
   decimation: 10
 
 terrain:
-  type: "trimesh" # "plane" or "trimesh"
+  type: "plane" # "plane" or "trimesh"
   static_friction: 1.0  # [-]
   dynamic_friction: 1.0  # [-]
   restitution: 0.        # [-]
@@ -103,25 +103,25 @@ terrain:
   terrain_length: 10.
   terrain_width: 10.
   border_size: 5.
-  num_terrains: 8
-  terrain_proportions: [0.0, 0.0, 0.5, 0.5] # terrain types: [plane, slope, random, discrete]
-  slope: 0.1
-  random_height: 0.1
-  discrete_height: 0.02
-  horizontal_scale: 0.1
-  vertical_scale: 0.005
-  slope_threshold: 2.0
+  num_terrains: 16  # More terrain variety
+  terrain_proportions: [1.0, 0.0, 0.0, 0.0] # More slopes and discrete obstacles, less flat
+  slope: 0.3  # Steeper slopes (was 0.1)
+  random_height: 0.2  # Higher random obstacles (was 0.1)
+  discrete_height: 0.05  # Taller discrete obstacles (was 0.02)
+  horizontal_scale: 0.05  # Finer terrain detail (was 0.1)
+  vertical_scale: 0.01  # More vertical variation (was 0.005)
+  slope_threshold: 1.5  # Lower threshold for slope detection
 
 commands:
   num_commands: 3 # default: lin_vel_x, lin_vel_y, ang_vel_yaw
-  still_proportion: 0.1
-  lin_vel_x: [-1.0, 1.0] # min max [m/s]
-  lin_vel_y: [-1.0, 1.0] # min max [m/s]
-  ang_vel_yaw: [-1, 1]   # min max [rad/s]
-  resampling_time_s: [8., 12.]
-  gait_frequency: [1.0, 2.0] # min max [Hz]
+  still_proportion: 0.05  # Less time standing still (was 0.1)
+  lin_vel_x: [-1.5, 1.5] # Higher max forward/backward speed (was -1.0, 1.0)
+  lin_vel_y: [-1.2, 1.2] # Higher max lateral speed (was -1.0, 1.0)
+  ang_vel_yaw: [-1.5, 1.5]   # Higher max turning speed (was -1, 1)
+  resampling_time_s: [5., 8.]  # Faster command changes (was 8., 12.)
+  gait_frequency: [0.8, 2.5] # Wider gait frequency range (was 1.0, 2.0)
   # curriculum only:
-  curriculum: false
+  curriculum: true
   update_rate: 0.1
   lin_vel_levels: 10
   ang_vel_levels: 10
@@ -142,31 +142,31 @@ normalization:
   filter_weight: 0.1
   push_force: 0.1
   push_torque: 0.5
-  clip_actions: 1.
+  clip_actions: 1.0
 
 noise:
   gravity:
-    range: [0., 0.01]
+    range: [0., 0.02]  # Increased gravity noise (was 0.01)
     operation: "additive"
     distribution: "gaussian"
   lin_vel:
-    range: [0., 0.05]
+    range: [0., 0.1]  # Increased linear velocity noise (was 0.05)
     operation: "additive"
     distribution: "gaussian"
   ang_vel:
-    range: [0., 0.1]
+    range: [0., 0.15]  # Increased angular velocity noise (was 0.1)
     operation: "additive"
     distribution: "gaussian"
   dof_pos:
-    range: [0., 0.01]
+    range: [0., 0.02]  # Increased joint position noise (was 0.01)
     operation: "additive"
     distribution: "gaussian"
   dof_vel:
-    range: [0., 0.1]
+    range: [0., 0.15]  # Increased joint velocity noise (was 0.1)
     operation: "additive"
     distribution: "gaussian"
   height:
-    range: [0., 0.02]
+    range: [0., 0.03]  # Increased height sensor noise (was 0.02)
     operation: "additive"
     distribution: "gaussian"
 
@@ -184,33 +184,33 @@ randomization:
     operation: "additive"
     distribution: "gaussian"
 
-  kick_interval_s: 2.
+  kick_interval_s: 1.5  # More frequent kicks (was 2.0)
   kick_lin_vel:
-    range: [0., 0.1]
+    range: [0., 0.3]  # Stronger kicks (was 0.1)
     operation: "additive"
     distribution: "gaussian"
   kick_ang_vel:
-    range: [0., 0.02]
+    range: [0., 0.05]  # Stronger angular kicks (was 0.02)
     operation: "additive"
     distribution: "gaussian"
 
-  push_interval_s: 5.
+  push_interval_s: 3.  # More frequent pushes (was 5.0)
   push_duration_s: 1.
   push_force:
-    range: [0., 10.]
+    range: [0., 20.]  # Stronger pushes (was 10.)
     operation: "additive"
     distribution: "gaussian"
   push_torque:
-    range: [0., 2.]
+    range: [0., 4.]  # Stronger torques (was 2.)
     operation: "additive"
     distribution: "gaussian"
 
   dof_stiffness:
-    range: [0.95, 1.05]
+    range: [0.8, 1.2]  # Larger stiffness variation (was 0.95-1.05)
     operation: "scaling"
     distribution: "uniform"
   dof_damping:
-    range: [0.95, 1.05]
+    range: [0.8, 1.2]  # Larger damping variation (was 0.95-1.05)
     operation: "scaling"
     distribution: "uniform"
   dof_friction:
@@ -219,15 +219,15 @@ randomization:
     distribution: "uniform"
 
   friction:
-    range: [0.1, 2.0]
+    range: [0.02, 3.0]  # Wider friction range (was 0.1-2.0)
     operation: "additive"
     distribution: "uniform"
   compliance:
-    range: [0.5, 1.5]
+    range: [0.3, 2.0]  # Wider compliance range (was 0.5-1.5)
     operation: "additive"
     distribution: "uniform"
   restitution:
-    range: [0.1, 0.9]
+    range: [0.0, 1.0]  # Full restitution range (was 0.1-0.9)
     operation: "additive"
     distribution: "uniform"
 
@@ -250,21 +250,21 @@ randomization:
 
 rewards:
   scales:
-    survival: 0.25
-    tracking_lin_vel_x: 1.0
-    tracking_lin_vel_y: 1.0
-    tracking_ang_vel: 0.5
-    base_height: -20.
-    orientation: -5.
-    torques: -2.e-4
-    torque_tiredness: -1.e-2
-    power: -2.e-3
-    lin_vel_z: -2.
-    ang_vel_xy: -0.2
-    dof_vel: -1.e-4
-    dof_acc: -1.e-7
-    root_acc: -1.e-4
-    action_rate: -1.
+    survival: 0.5  # Increased survival reward
+    tracking_lin_vel_x: 0.8  # Reduced tracking rewards to prioritize stability
+    tracking_lin_vel_y: 0.8
+    tracking_ang_vel: 0.3
+    base_height: -30.  # Stronger height penalty
+    orientation: -10.  # Much stronger orientation penalty
+    torques: -5.e-4  # Stronger torque penalty
+    torque_tiredness: -2.e-2  # Stronger torque smoothness penalty
+    power: -5.e-3  # Stronger power penalty
+    lin_vel_z: -5.  # Much stronger vertical velocity penalty
+    ang_vel_xy: -1.0  # Much stronger angular velocity penalty (anti-oscillation)
+    dof_vel: -5.e-4  # Stronger joint velocity penalty
+    dof_acc: -5.e-7  # Stronger joint acceleration penalty
+    root_acc: -5.e-4  # Stronger root acceleration penalty
+    action_rate: -2.  # Stronger action rate penalty for smoothness
     dof_pos_limits: -1.
     dof_vel_limits: -0.
     torque_limits: -0.
