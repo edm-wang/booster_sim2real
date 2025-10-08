@@ -1,0 +1,6 @@
+[submodule "external/booster_robotics_sdk"]
+	path = external/booster_robotics_sdk
+	url = git@github.com:BoosterRobotics/booster_robotics_sdk.git
+[submodule "external/booster_gym"]
+	path = external/booster_gym
+	url = git@github.com:BoosterRobotics/booster_gym.git
