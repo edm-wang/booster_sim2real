@@ -1,0 +1,12 @@
+# Booster robot mode service
+# Request to change robot mode
+
+# Request
+uint8 mode                      # kCustom=0, kDamping=1, kStand=2, etc.
+
+---
+
+# Response
+bool success                    # Whether the mode change was successful
+string message                  # Status message
+
