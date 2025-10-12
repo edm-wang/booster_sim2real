@@ -199,9 +199,30 @@ class BoosterSensorPublisher(Node):
             self.dof_vel[i] = motor.dq
     
     def _rotate_vector_inverse_rpy(self, roll, pitch, yaw, vector):
-        """Rotate vector by inverse RPY"""
-        # Simplified version - just return the vector as-is
-        return vector
+        """Rotate vector by inverse RPY (SAME AS deploy.py utils/rotate.py)"""
+        # Implement the exact same rotation as deploy.py
+        cos_roll = np.cos(roll)
+        sin_roll = np.sin(roll)
+        cos_pitch = np.cos(pitch)
+        sin_pitch = np.sin(pitch)
+        cos_yaw = np.cos(yaw)
+        sin_yaw = np.sin(yaw)
+        
+        # Rotation matrices
+        R_x = np.array([[1, 0, 0],
+                       [0, cos_roll, -sin_roll],
+                       [0, sin_roll, cos_roll]])
+        
+        R_y = np.array([[cos_pitch, 0, sin_pitch],
+                       [0, 1, 0],
+                       [-sin_pitch, 0, cos_pitch]])
+        
+        R_z = np.array([[cos_yaw, -sin_yaw, 0],
+                       [sin_yaw, cos_yaw, 0],
+                       [0, 0, 1]])
+        
+        # Combined rotation matrix (inverse)
+        return (R_z @ R_y @ R_x).T @ vector
     
     def publish_sensor_data(self):
         """Publish sensor data"""
@@ -222,40 +243,42 @@ class BoosterSensorPublisher(Node):
             sensor_data.joint_velocities = self.dof_vel.tolist()
             sensor_data.joint_torques = [0.0] * 23
         else:
-            # Use simulated sensor data
+            # Use simulated sensor data (SAME FORMAT AS deploy.py)
             self.sim_time += 1.0 / self.publish_rate
             
             # Simulate IMU data with small oscillations
-            sensor_data.imu_rpy = [
+            imu_rpy = np.array([
                 0.05 * np.sin(self.sim_time * 0.5),
                 0.02 * np.cos(self.sim_time * 0.3),
                 self.sim_time * 0.1
-            ]
-            sensor_data.imu_gyro = [
+            ])
+            imu_gyro = np.array([
                 0.01 * np.sin(self.sim_time * 0.7),
                 0.01 * np.cos(self.sim_time * 0.4),
                 0.01 * np.sin(self.sim_time * 0.6)
-            ]
-            sensor_data.imu_acc = [0.0, 0.0, -9.81]
+            ])
+            imu_acc = np.array([0.0, 0.0, -9.81])
+            
+            # Calculate projected gravity (SAME AS deploy.py)
+            self.projected_gravity[:] = self._rotate_vector_inverse_rpy(
+                imu_rpy[0], imu_rpy[1], imu_rpy[2],
+                np.array([0.0, 0.0, -1.0])
+            )
+            self.base_ang_vel[:] = imu_gyro
             
             # Simulate joint data with small movements
-            joint_positions = []
-            joint_velocities = []
-            joint_torques = []
-            
             for i in range(23):
                 # Add small oscillations to default positions
-                pos = self.default_positions[i] + 0.01 * np.sin(self.sim_time + i * 0.1)
-                vel = 0.01 * np.cos(self.sim_time + i * 0.1)
-                torque = 0.0
-                
-                joint_positions.append(pos)
-                joint_velocities.append(vel)
-                joint_torques.append(torque)
+                self.dof_pos[i] = self.default_positions[i] + 0.01 * np.sin(self.sim_time + i * 0.1)
+                self.dof_vel[i] = 0.01 * np.cos(self.sim_time + i * 0.1)
             
-            sensor_data.joint_positions = joint_positions
-            sensor_data.joint_velocities = joint_velocities
-            sensor_data.joint_torques = joint_torques
+            # Set sensor data message (SAME FORMAT AS deploy.py)
+            sensor_data.imu_rpy = imu_rpy.tolist()
+            sensor_data.imu_gyro = imu_gyro.tolist()
+            sensor_data.imu_acc = imu_acc.tolist()
+            sensor_data.joint_positions = self.dof_pos.tolist()
+            sensor_data.joint_velocities = self.dof_vel.tolist()
+            sensor_data.joint_torques = [0.0] * 23
         
         # Set timestamp
         sensor_data.timestamp = self.get_clock().now().to_msg()
@@ -291,19 +314,41 @@ def main(args=None):
     rclpy.init(args=args)
     
     try:
-        # Parse command line arguments
+        # Parse command line arguments (only non-ROS2 args)
         import argparse
+        import sys
+        
+        # Filter out ROS2 arguments
+        ros2_args = []
+        other_args = []
+        i = 0
+        while i < len(sys.argv):
+            if sys.argv[i] in ['--ros-args', '-r', '--params-file', '-p']:
+                # Skip ROS2 arguments
+                if sys.argv[i] in ['--ros-args', '--params-file']:
+                    i += 1
+                elif sys.argv[i] in ['-r', '-p']:
+                    i += 2
+                else:
+                    i += 1
+            else:
+                other_args.append(sys.argv[i])
+                i += 1
+        
         parser = argparse.ArgumentParser(description='Booster Sensor Publisher')
         parser.add_argument('--config', type=str, help='Path to configuration file')
         parser.add_argument('--simulation', action='store_true', help='Run in simulation mode')
         parser.add_argument('--rate', type=float, default=100.0, help='Publish rate in Hz')
-        args = parser.parse_args()
+        parsed_args = parser.parse_args(other_args[1:])  # Skip script name
         
-        publisher = BoosterSensorPublisher(config_file=args.config)
+        publisher = BoosterSensorPublisher(config_file=parsed_args.config)
         
-        # Set parameters
-        publisher.set_parameter(rclpy.parameter.Parameter('use_simulation', rclpy.Parameter.Type.BOOL, args.simulation))
-        publisher.set_parameter(rclpy.parameter.Parameter('publish_rate', rclpy.Parameter.Type.DOUBLE, args.rate))
+        # Update parameters directly (like booster_hardware_bridge.py does)
+        publisher.use_simulation = parsed_args.simulation
+        publisher.publish_rate = parsed_args.rate
+        # Update the timer with new rate
+        publisher.sensor_timer.cancel()
+        publisher.sensor_timer = publisher.create_timer(1.0/publisher.publish_rate, publisher.publish_sensor_data)
         
         # Handle shutdown gracefully
         def shutdown_handler():

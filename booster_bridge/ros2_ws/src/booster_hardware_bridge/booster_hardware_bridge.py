@@ -259,9 +259,6 @@ class BoosterHardwareBridge(Node):
             sensor_data.joint_positions[i] = motor.q
             sensor_data.joint_velocities[i] = motor.dq
             sensor_data.joint_torques[i] = motor.tau_est
-            sensor_data.joint_temperature[i] = motor.temperature
-            sensor_data.joint_current[i] = motor.current
-            sensor_data.joint_voltage[i] = motor.voltage
         
         # Timestamp
         sensor_data.timestamp = self.get_clock().now().to_msg()
