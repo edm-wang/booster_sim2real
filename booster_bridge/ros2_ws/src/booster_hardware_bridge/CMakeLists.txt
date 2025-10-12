@@ -20,6 +20,7 @@ install(PROGRAMS
   booster_robot_monitor.py
   booster_data_plotter.py
   booster_web_plotter.py
+  booster_sensor_publisher.py
   DESTINATION lib/${PROJECT_NAME}
 )
 
