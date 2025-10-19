@@ -1,0 +1,9 @@
+# Booster Head Control Service
+# Simple service for head up/down movements
+
+# Request
+string command              # "up" or "down"
+
+# Response
+bool success                # Whether the command was accepted
+string message              # Status message

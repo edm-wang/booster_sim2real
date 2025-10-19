@@ -7,15 +7,16 @@ endif()
 
 # find dependencies
 find_package(ament_cmake REQUIRED)
-find_package(rosidl_default_generators REQUIRED)
 find_package(builtin_interfaces REQUIRED)
+find_package(rosidl_default_generators REQUIRED)
 
-# Generate interfaces
+# Generate message and service files
 rosidl_generate_interfaces(${PROJECT_NAME}
   "msg/BoosterSensorData.msg"
   "msg/BoosterMotorCmd.msg"
   "msg/BoosterControlCmd.msg"
   "srv/BoosterRobotMode.srv"
+  "srv/BoosterHeadControl.srv"
   DEPENDENCIES builtin_interfaces
 )
 
