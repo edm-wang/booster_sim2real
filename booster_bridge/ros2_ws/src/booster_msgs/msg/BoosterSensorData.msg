@@ -13,4 +13,3 @@ float32[23] joint_torques       # Estimated torques (Nm)
 
 # Timestamp
 builtin_interfaces/Time timestamp
-

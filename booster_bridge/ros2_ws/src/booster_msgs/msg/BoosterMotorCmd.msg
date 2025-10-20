@@ -13,4 +13,3 @@ float32[23] joint_kd            # Velocity gains
 
 # Timestamp
 builtin_interfaces/Time timestamp
-
