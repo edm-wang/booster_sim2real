@@ -89,14 +89,14 @@ class BoosterHardwareBridge(Node):
         self.motor_cmd_count = 0
         self.last_stats_time = 0.0
         
+        # Initialize ROS2 communication first
+        self._init_ros2_communication(qos_profile)
+        
         # Initialize Booster SDK
         if BOOSTER_SDK_AVAILABLE:
             self._init_booster_sdk()
         else:
             self._init_simulation_mode()
-        
-        # Initialize ROS2 communication
-        self._init_ros2_communication(qos_profile)
         
         # Control loop timer (500Hz like deploy.py)
         self.control_timer = self.create_timer(0.002, self.control_loop)
