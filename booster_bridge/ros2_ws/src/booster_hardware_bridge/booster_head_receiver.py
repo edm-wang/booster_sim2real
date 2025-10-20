@@ -45,12 +45,22 @@ class BoosterHeadReceiver(Node):
     def head_command_callback(self, msg):
         """Handle incoming head movement commands"""
         try:
-            # For now, we'll use a simple approach - just log the message
-            # In a real implementation, you would parse the message and call the appropriate SDK method
             self.get_logger().info(f'Received head command: vx={msg.vx}, vy={msg.vy}, vyaw={msg.vyaw}')
+            self.get_logger().info(f'Head control: {msg.head_control}, pitch: {msg.head_pitch}, yaw: {msg.head_yaw}')
             
-            # This is where you would implement the actual head movement logic
-            # For testing, we'll just log that we received the command
+            # Check if head control is enabled
+            if not msg.head_control:
+                self.get_logger().info('Head control disabled in message')
+                return
+            
+            # Use the actual head movement data from the message
+            self.get_logger().info(f'Moving head to pitch={msg.head_pitch}, yaw={msg.head_yaw}')
+            result = self.client.RotateHead(msg.head_pitch, msg.head_yaw)
+            
+            if result == 0:
+                self.get_logger().info(f'✅ Head movement successful: pitch={msg.head_pitch}, yaw={msg.head_yaw}')
+            else:
+                self.get_logger().error(f'❌ Head movement failed with error: {result}')
             
         except Exception as e:
             self.get_logger().error(f'Error processing head command: {str(e)}')
