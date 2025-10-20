@@ -45,12 +45,27 @@ class BoosterHeadReceiver(Node):
     def head_command_callback(self, msg):
         """Handle incoming head movement commands"""
         try:
-            # For now, we'll use a simple approach - just log the message
-            # In a real implementation, you would parse the message and call the appropriate SDK method
             self.get_logger().info(f'Received head command: vx={msg.vx}, vy={msg.vy}, vyaw={msg.vyaw}')
             
-            # This is where you would implement the actual head movement logic
-            # For testing, we'll just log that we received the command
+            # Execute head movement based on command values
+            # Head up: vy < 0 (negative pitch)
+            # Head down: vy > 0 (positive pitch)
+            
+            # More specific detection for the exact values being sent
+            if msg.vy <= -0.2:  # Head up movement (covers -0.3)
+                self.get_logger().info(f'Executing head up movement (vy={msg.vy})...')
+                # Use SDK head up command
+                self.client.SendCommand("hu")  # SDK head up command
+                self.get_logger().info('Head up command sent to robot')
+                
+            elif msg.vy >= 0.5:  # Head down movement (covers 1.0)
+                self.get_logger().info(f'Executing head down movement (vy={msg.vy})...')
+                # Use SDK head down command
+                self.client.SendCommand("hd")  # SDK head down command
+                self.get_logger().info('Head down command sent to robot')
+                
+            else:
+                self.get_logger().info(f'No significant head movement detected (vy={msg.vy} not in range)')
             
         except Exception as e:
             self.get_logger().error(f'Error processing head command: {str(e)}')

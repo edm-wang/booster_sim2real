@@ -70,7 +70,7 @@ class BoosterHeadPublisher(Node):
         cmd = BoosterControlCmd()
         cmd.timestamp = self.get_clock().now().to_msg()
         cmd.vx = 0.0
-        cmd.vy = 0.0
+        cmd.vy = -0.3  # Negative pitch for head up
         cmd.vyaw = 0.0
         cmd.start_custom_mode = False
         cmd.start_rl_gait = False
@@ -81,7 +81,7 @@ class BoosterHeadPublisher(Node):
         cmd = BoosterControlCmd()
         cmd.timestamp = self.get_clock().now().to_msg()
         cmd.vx = 0.0
-        cmd.vy = 0.0
+        cmd.vy = 1.0  # Positive pitch for head down
         cmd.vyaw = 0.0
         cmd.start_custom_mode = False
         cmd.start_rl_gait = False
