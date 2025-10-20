@@ -46,26 +46,21 @@ class BoosterHeadReceiver(Node):
         """Handle incoming head movement commands"""
         try:
             self.get_logger().info(f'Received head command: vx={msg.vx}, vy={msg.vy}, vyaw={msg.vyaw}')
+            self.get_logger().info(f'Head control: {msg.head_control}, pitch: {msg.head_pitch}, yaw: {msg.head_yaw}')
             
-            # Execute head movement based on command values
-            # Head up: vy < 0 (negative pitch)
-            # Head down: vy > 0 (positive pitch)
+            # Check if head control is enabled
+            if not msg.head_control:
+                self.get_logger().info('Head control disabled in message')
+                return
             
-            # More specific detection for the exact values being sent
-            if msg.vy <= -0.2:  # Head up movement (covers -0.3)
-                self.get_logger().info(f'Executing head up movement (vy={msg.vy})...')
-                # Use SDK head up command
-                self.client.SendCommand("hu")  # SDK head up command
-                self.get_logger().info('Head up command sent to robot')
-                
-            elif msg.vy >= 0.5:  # Head down movement (covers 1.0)
-                self.get_logger().info(f'Executing head down movement (vy={msg.vy})...')
-                # Use SDK head down command
-                self.client.SendCommand("hd")  # SDK head down command
-                self.get_logger().info('Head down command sent to robot')
-                
+            # Use the actual head movement data from the message
+            self.get_logger().info(f'Moving head to pitch={msg.head_pitch}, yaw={msg.head_yaw}')
+            result = self.client.RotateHead(msg.head_pitch, msg.head_yaw)
+            
+            if result == 0:
+                self.get_logger().info(f'✅ Head movement successful: pitch={msg.head_pitch}, yaw={msg.head_yaw}')
             else:
-                self.get_logger().info(f'No significant head movement detected (vy={msg.vy} not in range)')
+                self.get_logger().error(f'❌ Head movement failed with error: {result}')
             
         except Exception as e:
             self.get_logger().error(f'Error processing head command: {str(e)}')

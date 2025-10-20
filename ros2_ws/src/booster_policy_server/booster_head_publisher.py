@@ -74,6 +74,10 @@ class BoosterHeadPublisher(Node):
         cmd.vyaw = 0.0
         cmd.start_custom_mode = False
         cmd.start_rl_gait = False
+        # Head control data
+        cmd.head_control = True
+        cmd.head_pitch = -0.3  # Head up from SDK
+        cmd.head_yaw = 0.0
         return cmd
         
     def create_head_down_command(self):
@@ -85,6 +89,10 @@ class BoosterHeadPublisher(Node):
         cmd.vyaw = 0.0
         cmd.start_custom_mode = False
         cmd.start_rl_gait = False
+        # Head control data
+        cmd.head_control = True
+        cmd.head_pitch = 1.0   # Head down from SDK
+        cmd.head_yaw = 0.0
         return cmd
 
 def main(args=None):
