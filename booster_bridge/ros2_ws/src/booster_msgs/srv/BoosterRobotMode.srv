@@ -4,7 +4,7 @@
 # Handled by: booster_hardware_bridge
 
 # Request
-uint8 mode                      # Robot mode: kDamping=0, kCustom=1, kStand=2
+uint8 mode                      # Robot mode: kDamping=0, kCustom=1, kPrep=2
 
 ---
 
