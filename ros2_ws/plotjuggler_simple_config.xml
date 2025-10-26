@@ -1,0 +1,57 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<PlotJuggler>
+  <geometry>
+    <x>100</x>
+    <y>100</y>
+    <width>1600</width>
+    <height>1000</height>
+  </geometry>
+  <plot_areas>
+    <plot_area_0>
+      <geometry>
+        <x>0</x>
+        <y>0</y>
+        <width>800</width>
+        <height>200</height>
+      </geometry>
+      <name>Raw IMU Data</name>
+      <curves>
+        <curve_0>
+          <name>IMU RPY</name>
+          <plot_style>Lines</plot_style>
+          <color>#FF0000</color>
+          <sources>
+            <source_0>/booster/sensor_data/imu_rpy[0]</source_0>
+            <source_1>/booster/sensor_data/imu_rpy[1]</source_1>
+            <source_2>/booster/sensor_data/imu_rpy[2]</source_2>
+          </sources>
+        </curve_0>
+      </curves>
+    </plot_area_0>
+    <plot_area_1>
+      <geometry>
+        <x>800</x>
+        <y>0</y>
+        <width>800</width>
+        <height>200</height>
+      </geometry>
+      <name>Policy Actions</name>
+      <curves>
+        <curve_0>
+          <name>Actions</name>
+          <plot_style>Lines</plot_style>
+          <color>#00FF00</color>
+          <sources>
+            <source_0>/plotjuggler/actions[0]</source_0>
+            <source_1>/plotjuggler/actions[1]</source_1>
+            <source_2>/plotjuggler/actions[2]</source_2>
+            <source_3>/plotjuggler/actions[3]</source_3>
+            <source_4>/plotjuggler/actions[4]</source_4>
+            <source_5>/plotjuggler/actions[5]</source_5>
+          </sources>
+        </curve_0>
+      </curves>
+    </plot_area_1>
+  </plot_areas>
+</PlotJuggler>
+

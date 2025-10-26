@@ -1,8 +1,10 @@
-# Booster robot mode service
-# Request to change robot mode
+# Booster Robot Mode Service
+# This service allows changing the robot's operating mode
+# Requested by: booster_policy_server (on 5090)
+# Handled by: booster_hardware_bridge
 
 # Request
-uint8 mode                      # kCustom=0, kDamping=1, kStand=2, etc.
+uint8 mode                      # Robot mode: kDamping=0, kCustom=1, kStand=2
 
 ---
 

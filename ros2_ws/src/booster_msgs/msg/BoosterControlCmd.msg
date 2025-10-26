@@ -12,11 +12,6 @@ float32 vyaw                    # Yaw velocity (rad/s)
 bool start_custom_mode          # Switch to custom mode
 bool start_rl_gait              # Start RL gait
 
-# Head control
-bool head_control               # Enable head control
-float32 head_pitch              # Head pitch angle (radians)
-float32 head_yaw                # Head yaw angle (radians)
-
 # Timestamp
 builtin_interfaces/Time timestamp
 

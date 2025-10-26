@@ -1,0 +1,64 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<PlotJuggler>
+  <DataStream>
+    <Plugin name="ROS2" enabled="true">
+      <Topics>
+        <Topic name="/plotjuggler/imu_rpy" enabled="true"/>
+        <Topic name="/plotjuggler/imu_gyro" enabled="true"/>
+        <Topic name="/plotjuggler/imu_acc" enabled="true"/>
+        <Topic name="/plotjuggler/joint_positions" enabled="true"/>
+        <Topic name="/plotjuggler/joint_velocities" enabled="true"/>
+        <Topic name="/plotjuggler/joint_torques" enabled="true"/>
+        <Topic name="/plotjuggler/imu_roll" enabled="true"/>
+        <Topic name="/plotjuggler/imu_pitch" enabled="true"/>
+        <Topic name="/plotjuggler/imu_yaw" enabled="true"/>
+        <Topic name="/plotjuggler/imu_gyro_x" enabled="true"/>
+        <Topic name="/plotjuggler/imu_gyro_y" enabled="true"/>
+        <Topic name="/plotjuggler/imu_gyro_z" enabled="true"/>
+        <Topic name="/plotjuggler/imu_acc_x" enabled="true"/>
+        <Topic name="/plotjuggler/imu_acc_y" enabled="true"/>
+        <Topic name="/plotjuggler/imu_acc_z" enabled="true"/>
+        <Topic name="/plotjuggler/joint_pos_mean" enabled="true"/>
+        <Topic name="/plotjuggler/joint_pos_std" enabled="true"/>
+        <Topic name="/plotjuggler/joint_vel_mean" enabled="true"/>
+        <Topic name="/plotjuggler/joint_vel_std" enabled="true"/>
+        <Topic name="/plotjuggler/joint_torque_mean" enabled="true"/>
+        <Topic name="/plotjuggler/joint_torque_std" enabled="true"/>
+      </Topics>
+    </Plugin>
+  </DataStream>
+  <Layout>
+    <Plot name="IMU RPY">
+      <Curve name="/plotjuggler/imu_roll" color="#FF0000"/>
+      <Curve name="/plotjuggler/imu_pitch" color="#00FF00"/>
+      <Curve name="/plotjuggler/imu_yaw" color="#0000FF"/>
+    </Plot>
+    <Plot name="IMU Gyro">
+      <Curve name="/plotjuggler/imu_gyro_x" color="#FF0000"/>
+      <Curve name="/plotjuggler/imu_gyro_y" color="#00FF00"/>
+      <Curve name="/plotjuggler/imu_gyro_z" color="#0000FF"/>
+    </Plot>
+    <Plot name="IMU Acceleration">
+      <Curve name="/plotjuggler/imu_acc_x" color="#FF0000"/>
+      <Curve name="/plotjuggler/imu_acc_y" color="#00FF00"/>
+      <Curve name="/plotjuggler/imu_acc_z" color="#0000FF"/>
+    </Plot>
+    <Plot name="Joint Positions (Mean/Std)">
+      <Curve name="/plotjuggler/joint_pos_mean" color="#FF0000"/>
+      <Curve name="/plotjuggler/joint_pos_std" color="#00FF00"/>
+    </Plot>
+    <Plot name="Joint Velocities (Mean/Std)">
+      <Curve name="/plotjuggler/joint_vel_mean" color="#FF0000"/>
+      <Curve name="/plotjuggler/joint_vel_std" color="#00FF00"/>
+    </Plot>
+    <Plot name="Joint Torques (Mean/Std)">
+      <Curve name="/plotjuggler/joint_torque_mean" color="#FF0000"/>
+      <Curve name="/plotjuggler/joint_torque_std" color="#00FF00"/>
+    </Plot>
+  </Layout>
+</PlotJuggler>
+
+
+
+
+

@@ -16,7 +16,6 @@ rosidl_generate_interfaces(${PROJECT_NAME}
   "msg/BoosterMotorCmd.msg"
   "msg/BoosterControlCmd.msg"
   "srv/BoosterRobotMode.srv"
-  "srv/BoosterHeadControl.srv"
   DEPENDENCIES builtin_interfaces
 )
 

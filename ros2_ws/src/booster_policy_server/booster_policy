@@ -1,0 +1,297 @@
+#!/usr/bin/env python3
+
+"""
+Booster ROSBag Policy Processor
+Processes rosbag sensor data and runs policy inference
+Publishes observation data and commands for PlotJuggler visualization
+"""
+
+import rclpy
+from rclpy.node import Node
+from rclpy.qos import QoSProfile, ReliabilityPolicy, DurabilityPolicy
+import numpy as np
+import time
+import yaml
+import logging
+import threading
+from typing import Optional
+import random
+
+# Import ROS2 message types
+from booster_msgs.msg import BoosterSensorData, BoosterMotorCmd
+
+# Import existing booster utilities
+import sys
+import os
+sys.path.append('/home/romela5090/Han/booster_sim2real/deploy_booster')
+from utils.policy import Policy
+from utils.rotate import rotate_vector_inverse_rpy
+
+
+class BoosterRosbagPolicyProcessor(Node):
+    """
+    Booster ROSBag Policy Processor Node
+    Processes rosbag sensor data and runs policy inference
+    """
+    
+    def __init__(self):
+        super().__init__('booster_rosbag_policy_processor')
+        
+        # Setup logging
+        logging.basicConfig(level=logging.INFO)
+        self.logger = logging.getLogger(__name__)
+        
+        # Initialize parameters
+        self.declare_parameter('config_file', 'T1.yaml')
+        self.declare_parameter('policy_interval', 0.02)  # 20ms for policy inference
+        self.declare_parameter('use_random_commands', True)
+        self.declare_parameter('max_velocity', 1.0)
+        self.declare_parameter('max_angular_velocity', 1.0)
+        
+        # Load configuration
+        config_file = self.get_parameter('config_file').value
+        config_path = f'/home/romela5090/Han/booster_sim2real/deploy_booster/configs/{config_file}'
+        
+        try:
+            with open(config_path, 'r', encoding='utf-8') as f:
+                self.cfg = yaml.load(f.read(), Loader=yaml.FullLoader)
+        except Exception as e:
+            self.get_logger().error(f"Failed to load config: {e}")
+            raise
+        
+        # Fix policy path to use absolute path
+        if 'policy' in self.cfg and 'policy_path' in self.cfg['policy']:
+            original_path = self.cfg['policy']['policy_path']
+            if original_path.startswith('./'):
+                # Convert relative path to absolute path
+                self.cfg['policy']['policy_path'] = f'/home/romela5090/Han/booster_sim2real/deploy_booster/{original_path[2:]}'
+                self.get_logger().info(f"Updated policy path: {self.cfg['policy']['policy_path']}")
+        
+        # Initialize policy
+        try:
+            self.policy = Policy(cfg=self.cfg)
+        except Exception as e:
+            self.get_logger().error(f"Failed to initialize policy: {e}")
+            raise
+        
+        # Initialize state variables (after parameters are declared)
+        self._init_state_variables()
+        
+        # Setup QoS
+        qos_profile = QoSProfile(
+            reliability=ReliabilityPolicy.BEST_EFFORT,
+            durability=DurabilityPolicy.VOLATILE,
+            depth=10
+        )
+        
+        # Subscribers
+        self.sensor_subscription = self.create_subscription(
+            BoosterSensorData,
+            '/booster/sensor_data',
+            self.sensor_callback,
+            qos_profile
+        )
+        
+        # Publisher for motor commands
+        self.motor_cmd_pub = self.create_publisher(
+            BoosterMotorCmd,
+            '/booster/motor_cmd',
+            qos_profile
+        )
+        
+        # Timer for policy inference
+        self.policy_interval = self.get_parameter('policy_interval').value
+        self.policy_timer = self.create_timer(
+            self.policy_interval,
+            self.policy_callback
+        )
+        
+        # Timer for command generation
+        self.use_random_commands = self.get_parameter('use_random_commands').value
+        if self.use_random_commands:
+            self.command_timer = self.create_timer(
+                1.0,  # Update commands every second
+                self.generate_random_commands
+            )
+        
+        self.get_logger().info("Booster ROSBag Policy Processor initialized")
+        self.get_logger().info(f"Policy interval: {self.policy_interval}s")
+        self.get_logger().info(f"Using constant forward commands: {self.use_random_commands}")
+    
+    def _init_state_variables(self):
+        """Initialize state variables"""
+        # Sensor data
+        self.dof_pos = np.zeros(23, dtype=np.float32)
+        self.dof_vel = np.zeros(23, dtype=np.float32)
+        self.base_ang_vel = np.zeros(3, dtype=np.float32)
+        self.projected_gravity = np.zeros(3, dtype=np.float32)
+        
+        # Commands
+        self.vx = 0.0
+        self.vy = 0.0
+        self.vyaw = 0.0
+        
+        # Policy state
+        self.actions = np.zeros(12, dtype=np.float32)
+        self.observation = np.zeros(47, dtype=np.float32)
+        
+        # Timing
+        self.last_policy_time = 0.0
+        self.current_time = 0.0
+        
+        # Command generation
+        self.max_vel = self.get_parameter('max_velocity').value
+        self.max_ang_vel = self.get_parameter('max_angular_velocity').value
+        self.command_change_time = 0.0
+    
+    def sensor_callback(self, msg: BoosterSensorData):
+        """Process incoming sensor data"""
+        try:
+            # Extract sensor data
+            self.dof_pos = np.array(msg.joint_positions, dtype=np.float32)
+            self.dof_vel = np.array(msg.joint_velocities, dtype=np.float32)
+            
+            # Process IMU data
+            imu_rpy = np.array(msg.imu_rpy, dtype=np.float32)
+            imu_gyro = np.array(msg.imu_gyro, dtype=np.float32)
+            
+            # Compute projected gravity
+            self.projected_gravity[:] = rotate_vector_inverse_rpy(
+                imu_rpy[0],  # roll
+                imu_rpy[1],  # pitch
+                imu_rpy[2],  # yaw
+                np.array([0.0, 0.0, -1.0])
+            )
+            
+            # Store angular velocity
+            self.base_ang_vel[:] = imu_gyro
+            
+            # Update current time
+            self.current_time = time.time()
+            
+        except Exception as e:
+            self.get_logger().error(f"Error processing sensor data: {e}")
+    
+    def generate_random_commands(self):
+        """Generate constant forward velocity commands"""
+        if not self.use_random_commands:
+            return
+        
+        # Set constant forward velocity
+        self.vx = 0.2  # Forward velocity
+        self.vy = 0.0  # No lateral movement
+        self.vyaw = 0.0  # No rotation
+        
+        self.get_logger().info(f"Set constant commands: vx={self.vx:.2f}, vy={self.vy:.2f}, vyaw={self.vyaw:.2f}")
+    
+    def policy_callback(self):
+        """Run policy inference"""
+        try:
+            # Update current time for policy inference
+            self.current_time = time.time()
+            
+            # Check if we have recent sensor data
+            if self.current_time - self.last_policy_time < self.policy_interval:
+                return
+              
+            # Validate data before policy inference
+            if np.any(np.isnan(self.dof_pos)) or np.any(np.isinf(self.dof_pos)):
+                self.get_logger().warn("Invalid dof_pos data, skipping policy inference")
+                return
+            if np.any(np.isnan(self.dof_vel)) or np.any(np.isinf(self.dof_vel)):
+                self.get_logger().warn("Invalid dof_vel data, skipping policy inference")
+                return
+            if np.any(np.isnan(self.base_ang_vel)) or np.any(np.isinf(self.base_ang_vel)):
+                self.get_logger().warn("Invalid base_ang_vel data, skipping policy inference")
+                return
+            if np.any(np.isnan(self.projected_gravity)) or np.any(np.isinf(self.projected_gravity)):
+                self.get_logger().warn("Invalid projected_gravity data, skipping policy inference")
+                return
+            
+            # Run policy inference
+            joint_targets = self.policy.inference(
+                time_now=self.current_time,
+                dof_pos=self.dof_pos,
+                dof_vel=self.dof_vel,
+                base_ang_vel=self.base_ang_vel,
+                projected_gravity=self.projected_gravity,
+                vx=self.vx,
+                vy=self.vy,
+                vyaw=self.vyaw
+            )
+            
+            # Get observation data from policy
+            self.observation = self.policy.obs.copy()
+            self.actions = self.policy.actions.copy()
+            
+            # Publish motor commands
+            self.publish_motor_commands(joint_targets)
+            
+            self.last_policy_time = self.current_time
+            
+        except Exception as e:
+            self.get_logger().error(f"Error in policy inference: {e}")
+    
+    def publish_motor_commands(self, joint_targets):
+        """Publish motor commands to robot"""
+        try:
+            # Validate joint targets
+            if len(joint_targets) < 23 or np.any(np.isnan(joint_targets)) or np.any(np.isinf(joint_targets)):
+                self.get_logger().warn("Invalid joint targets, using default values")
+                joint_targets = np.zeros(23, dtype=np.float32)
+            
+            # Create BoosterMotorCmd message
+            motor_cmd = BoosterMotorCmd()
+            
+            # Set joint positions (policy outputs)
+            motor_cmd.joint_positions = [float(x) for x in joint_targets]
+            
+            # Set joint velocities (zeros for position control)
+            motor_cmd.joint_velocities = [0.0] * 23
+            
+            # Set joint torques (zeros for position control)
+            motor_cmd.joint_torques = [0.0] * 23
+            
+            # Set gains from config
+            if 'common' in self.cfg and 'stiffness' in self.cfg['common']:
+                motor_cmd.joint_kp = [float(x) for x in self.cfg['common']['stiffness']]
+            else:
+                motor_cmd.joint_kp = [20.0] * 23  # Default stiffness
+            
+            if 'common' in self.cfg and 'damping' in self.cfg['common']:
+                motor_cmd.joint_kd = [float(x) for x in self.cfg['common']['damping']]
+            else:
+                motor_cmd.joint_kd = [0.2] * 23  # Default damping
+            
+            # Set command type (position control)
+            motor_cmd.cmd_type = 0  # Position control
+            
+            # Set timestamp
+            motor_cmd.timestamp = self.get_clock().now().to_msg()
+            
+            # Publish motor command
+            self.motor_cmd_pub.publish(motor_cmd)
+            
+            self.get_logger().debug(f"Published motor command with {len(joint_targets)} joint targets")
+            
+        except Exception as e:
+            self.get_logger().error(f"Error publishing motor commands: {e}")
+
+
+def main(args=None):
+    rclpy.init(args=args)
+    
+    try:
+        processor = BoosterRosbagPolicyProcessor()
+        rclpy.spin(processor)
+    except KeyboardInterrupt:
+        pass
+    except Exception as e:
+        print(f"Error: {e}")
+    finally:
+        if rclpy.ok():
+            rclpy.shutdown()
+
+
+if __name__ == '__main__':
+    main()

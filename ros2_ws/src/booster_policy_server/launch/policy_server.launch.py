@@ -17,7 +17,7 @@ def generate_launch_description():
     # Launch arguments
     config_file_arg = DeclareLaunchArgument(
         'config_file',
-        default_value='T1.yaml',
+        default_value='T1_alt.yaml',
         description='Configuration file name'
     )
     

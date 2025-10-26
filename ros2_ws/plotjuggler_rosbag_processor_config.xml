@@ -1,0 +1,366 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<PlotJuggler>
+  <geometry>
+    <x>100</x>
+    <y>100</y>
+    <width>1600</width>
+    <height>1000</height>
+  </geometry>
+  <data_sources>
+    <ros2>
+      <enabled>true</enabled>
+      <topics>
+        <booster_sensor_data>
+          <enabled>true</enabled>
+          <use_header_stamp>false</use_header_stamp>
+        </booster_sensor_data>
+        <plotjuggler_projected_gravity>
+          <enabled>true</enabled>
+          <use_header_stamp>false</use_header_stamp>
+        </plotjuggler_projected_gravity>
+        <plotjuggler_base_ang_vel>
+          <enabled>true</enabled>
+          <use_header_stamp>false</use_header_stamp>
+        </plotjuggler_base_ang_vel>
+        <plotjuggler_velocity_commands>
+          <enabled>true</enabled>
+          <use_header_stamp>false</use_header_stamp>
+        </plotjuggler_velocity_commands>
+        <plotjuggler_gait_phase>
+          <enabled>true</enabled>
+          <use_header_stamp>false</use_header_stamp>
+        </plotjuggler_gait_phase>
+        <plotjuggler_joint_positions>
+          <enabled>true</enabled>
+          <use_header_stamp>false</use_header_stamp>
+        </plotjuggler_joint_positions>
+        <plotjuggler_joint_velocities>
+          <enabled>true</enabled>
+          <use_header_stamp>false</use_header_stamp>
+        </plotjuggler_joint_velocities>
+        <plotjuggler_previous_actions>
+          <enabled>true</enabled>
+          <use_header_stamp>false</use_header_stamp>
+        </plotjuggler_previous_actions>
+        <plotjuggler_observation>
+          <enabled>true</enabled>
+          <use_header_stamp>false</use_header_stamp>
+        </plotjuggler_observation>
+        <plotjuggler_actions>
+          <enabled>true</enabled>
+          <use_header_stamp>false</use_header_stamp>
+        </plotjuggler_actions>
+        <plotjuggler_joint_targets>
+          <enabled>true</enabled>
+          <use_header_stamp>false</use_header_stamp>
+        </plotjuggler_joint_targets>
+      </topics>
+    </ros2>
+  </data_sources>
+  <plot_areas>
+    <!-- Raw Sensor Data -->
+    <plot_area_0>
+      <geometry>
+        <x>0</x>
+        <y>0</y>
+        <width>800</width>
+        <height>200</height>
+      </geometry>
+      <name>Raw IMU Data</name>
+      <curves>
+        <curve_0>
+          <name>IMU RPY</name>
+          <plot_style>Lines</plot_style>
+          <color>#FF0000</color>
+          <sources>
+            <source_0>/booster/sensor_data/imu_rpy[0]</source_0>
+            <source_1>/booster/sensor_data/imu_rpy[1]</source_1>
+            <source_2>/booster/sensor_data/imu_rpy[2]</source_2>
+          </sources>
+        </curve_0>
+        <curve_1>
+          <name>IMU Gyro</name>
+          <plot_style>Lines</plot_style>
+          <color>#00FF00</color>
+          <sources>
+            <source_0>/booster/sensor_data/imu_gyro[0]</source_0>
+            <source_1>/booster/sensor_data/imu_gyro[1]</source_1>
+            <source_2>/booster/sensor_data/imu_gyro[2]</source_2>
+          </sources>
+        </curve_1>
+      </curves>
+    </plot_area_0>
+    
+    <!-- Processed Observation Data -->
+    <plot_area_1>
+      <geometry>
+        <x>800</x>
+        <y>0</y>
+        <width>800</width>
+        <height>200</height>
+      </geometry>
+      <name>Processed Observation Data</name>
+      <curves>
+        <curve_0>
+          <name>Projected Gravity</name>
+          <plot_style>Lines</plot_style>
+          <color>#0000FF</color>
+          <sources>
+            <source_0>/plotjuggler/projected_gravity[0]</source_0>
+            <source_1>/plotjuggler/projected_gravity[1]</source_1>
+            <source_2>/plotjuggler/projected_gravity[2]</source_2>
+          </sources>
+        </curve_0>
+        <curve_1>
+          <name>Base Ang Vel</name>
+          <plot_style>Lines</plot_style>
+          <color>#FF8000</color>
+          <sources>
+            <source_0>/plotjuggler/base_ang_vel[0]</source_0>
+            <source_1>/plotjuggler/base_ang_vel[1]</source_1>
+            <source_2>/plotjuggler/base_ang_vel[2]</source_2>
+          </sources>
+        </curve_1>
+      </curves>
+    </plot_area_1>
+    
+    <!-- Velocity Commands and Gait Phase -->
+    <plot_area_2>
+      <geometry>
+        <x>0</x>
+        <y>200</y>
+        <width>800</width>
+        <height>200</height>
+      </geometry>
+      <name>Commands and Gait</name>
+      <curves>
+        <curve_0>
+          <name>Velocity Commands</name>
+          <plot_style>Lines</plot_style>
+          <color>#8000FF</color>
+          <sources>
+            <source_0>/plotjuggler/velocity_commands[0]</source_0>
+            <source_1>/plotjuggler/velocity_commands[1]</source_1>
+            <source_2>/plotjuggler/velocity_commands[2]</source_2>
+          </sources>
+        </curve_0>
+        <curve_1>
+          <name>Gait Phase</name>
+          <plot_style>Lines</plot_style>
+          <color>#FF0080</color>
+          <sources>
+            <source_0>/plotjuggler/gait_phase[0]</source_0>
+            <source_1>/plotjuggler/gait_phase[1]</source_1>
+          </sources>
+        </curve_1>
+      </curves>
+    </plot_area_2>
+    
+    <!-- Joint Positions -->
+    <plot_area_3>
+      <geometry>
+        <x>800</x>
+        <y>200</y>
+        <width>800</width>
+        <height>200</height>
+      </geometry>
+      <name>Joint Positions (Filtered)</name>
+      <curves>
+        <curve_0>
+          <name>Joint Pos 0-5</name>
+          <plot_style>Lines</plot_style>
+          <color>#00FF80</color>
+          <sources>
+            <source_0>/plotjuggler/joint_positions[0]</source_0>
+            <source_1>/plotjuggler/joint_positions[1]</source_1>
+            <source_2>/plotjuggler/joint_positions[2]</source_2>
+            <source_3>/plotjuggler/joint_positions[3]</source_3>
+            <source_4>/plotjuggler/joint_positions[4]</source_4>
+            <source_5>/plotjuggler/joint_positions[5]</source_5>
+          </sources>
+        </curve_0>
+        <curve_1>
+          <name>Joint Pos 6-11</name>
+          <plot_style>Lines</plot_style>
+          <color>#80FF00</color>
+          <sources>
+            <source_0>/plotjuggler/joint_positions[6]</source_0>
+            <source_1>/plotjuggler/joint_positions[7]</source_1>
+            <source_2>/plotjuggler/joint_positions[8]</source_2>
+            <source_3>/plotjuggler/joint_positions[9]</source_3>
+            <source_4>/plotjuggler/joint_positions[10]</source_4>
+            <source_5>/plotjuggler/joint_positions[11]</source_5>
+          </sources>
+        </curve_1>
+      </curves>
+    </plot_area_3>
+    
+    <!-- Joint Velocities -->
+    <plot_area_4>
+      <geometry>
+        <x>0</x>
+        <y>400</y>
+        <width>800</width>
+        <height>200</height>
+      </geometry>
+      <name>Joint Velocities (Filtered)</name>
+      <curves>
+        <curve_0>
+          <name>Joint Vel 0-5</name>
+          <plot_style>Lines</plot_style>
+          <color>#0080FF</color>
+          <sources>
+            <source_0>/plotjuggler/joint_velocities[0]</source_0>
+            <source_1>/plotjuggler/joint_velocities[1]</source_1>
+            <source_2>/plotjuggler/joint_velocities[2]</source_2>
+            <source_3>/plotjuggler/joint_velocities[3]</source_3>
+            <source_4>/plotjuggler/joint_velocities[4]</source_4>
+            <source_5>/plotjuggler/joint_velocities[5]</source_5>
+          </sources>
+        </curve_0>
+        <curve_1>
+          <name>Joint Vel 6-11</name>
+          <plot_style>Lines</plot_style>
+          <color>#8000FF</color>
+          <sources>
+            <source_0>/plotjuggler/joint_velocities[6]</source_0>
+            <source_1>/plotjuggler/joint_velocities[7]</source_1>
+            <source_2>/plotjuggler/joint_velocities[8]</source_2>
+            <source_3>/plotjuggler/joint_velocities[9]</source_3>
+            <source_4>/plotjuggler/joint_velocities[10]</source_4>
+            <source_5>/plotjuggler/joint_velocities[11]</source_5>
+          </sources>
+        </curve_1>
+      </curves>
+    </plot_area_4>
+    
+    <!-- Policy Actions -->
+    <plot_area_5>
+      <geometry>
+        <x>800</x>
+        <y>400</y>
+        <width>800</width>
+        <height>200</height>
+      </geometry>
+      <name>Policy Actions</name>
+      <curves>
+        <curve_0>
+          <name>Actions 0-5</name>
+          <plot_style>Lines</plot_style>
+          <color>#FF8000</color>
+          <sources>
+            <source_0>/plotjuggler/actions[0]</source_0>
+            <source_1>/plotjuggler/actions[1]</source_1>
+            <source_2>/plotjuggler/actions[2]</source_2>
+            <source_3>/plotjuggler/actions[3]</source_3>
+            <source_4>/plotjuggler/actions[4]</source_4>
+            <source_5>/plotjuggler/actions[5]</source_5>
+          </sources>
+        </curve_0>
+        <curve_1>
+          <name>Actions 6-11</name>
+          <plot_style>Lines</plot_style>
+          <color>#80FF00</color>
+          <sources>
+            <source_0>/plotjuggler/actions[6]</source_0>
+            <source_1>/plotjuggler/actions[7]</source_1>
+            <source_2>/plotjuggler/actions[8]</source_2>
+            <source_3>/plotjuggler/actions[9]</source_3>
+            <source_4>/plotjuggler/actions[10]</source_4>
+            <source_5>/plotjuggler/actions[11]</source_5>
+          </sources>
+        </curve_1>
+      </curves>
+    </plot_area_5>
+    
+    <!-- Joint Targets -->
+    <plot_area_6>
+      <geometry>
+        <x>0</x>
+        <y>600</y>
+        <width>800</width>
+        <height>200</height>
+      </geometry>
+      <name>Joint Targets</name>
+      <curves>
+        <curve_0>
+          <name>Targets 0-5</name>
+          <plot_style>Lines</plot_style>
+          <color>#FF0080</color>
+          <sources>
+            <source_0>/plotjuggler/joint_targets[0]</source_0>
+            <source_1>/plotjuggler/joint_targets[1]</source_1>
+            <source_2>/plotjuggler/joint_targets[2]</source_2>
+            <source_3>/plotjuggler/joint_targets[3]</source_3>
+            <source_4>/plotjuggler/joint_targets[4]</source_4>
+            <source_5>/plotjuggler/joint_targets[5]</source_5>
+          </sources>
+        </curve_0>
+        <curve_1>
+          <name>Targets 6-11</name>
+          <plot_style>Lines</plot_style>
+          <color>#8000FF</color>
+          <sources>
+            <source_0>/plotjuggler/joint_targets[6]</source_0>
+            <source_1>/plotjuggler/joint_targets[7]</source_1>
+            <source_2>/plotjuggler/joint_targets[8]</source_2>
+            <source_3>/plotjuggler/joint_targets[9]</source_3>
+            <source_4>/plotjuggler/joint_targets[10]</source_4>
+            <source_5>/plotjuggler/joint_targets[11]</source_5>
+          </sources>
+        </curve_1>
+      </curves>
+    </plot_area_6>
+    
+    <!-- Full Observation Vector -->
+    <plot_area_7>
+      <geometry>
+        <x>800</x>
+        <y>600</y>
+        <width>800</width>
+        <height>200</height>
+      </geometry>
+      <name>Full Observation Vector (47D)</name>
+      <curves>
+        <curve_0>
+          <name>Obs 0-11</name>
+          <plot_style>Lines</plot_style>
+          <color>#00FF80</color>
+          <sources>
+            <source_0>/plotjuggler/observation[0]</source_0>
+            <source_1>/plotjuggler/observation[1]</source_1>
+            <source_2>/plotjuggler/observation[2]</source_2>
+            <source_3>/plotjuggler/observation[3]</source_3>
+            <source_4>/plotjuggler/observation[4]</source_4>
+            <source_5>/plotjuggler/observation[5]</source_5>
+            <source_6>/plotjuggler/observation[6]</source_6>
+            <source_7>/plotjuggler/observation[7]</source_7>
+            <source_8>/plotjuggler/observation[8]</source_8>
+            <source_9>/plotjuggler/observation[9]</source_9>
+            <source_10>/plotjuggler/observation[10]</source_10>
+            <source_11>/plotjuggler/observation[11]</source_11>
+          </sources>
+        </curve_0>
+        <curve_1>
+          <name>Obs 12-23</name>
+          <plot_style>Lines</plot_style>
+          <color>#FF8000</color>
+          <sources>
+            <source_0>/plotjuggler/observation[12]</source_0>
+            <source_1>/plotjuggler/observation[13]</source_1>
+            <source_2>/plotjuggler/observation[14]</source_2>
+            <source_3>/plotjuggler/observation[15]</source_3>
+            <source_4>/plotjuggler/observation[16]</source_4>
+            <source_5>/plotjuggler/observation[17]</source_5>
+            <source_6>/plotjuggler/observation[18]</source_6>
+            <source_7>/plotjuggler/observation[19]</source_7>
+            <source_8>/plotjuggler/observation[20]</source_8>
+            <source_9>/plotjuggler/observation[21]</source_9>
+            <source_10>/plotjuggler/observation[22]</source_10>
+            <source_11>/plotjuggler/observation[23]</source_11>
+          </sources>
+        </curve_1>
+      </curves>
+    </plot_area_7>
+  </plot_areas>
+</PlotJuggler>
