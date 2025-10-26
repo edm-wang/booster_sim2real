@@ -1,0 +1,164 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<PlotJuggler>
+  <geometry>
+    <x>100</x>
+    <y>100</y>
+    <width>1400</width>
+    <height>900</height>
+  </geometry>
+  <data_sources>
+    <ros2>
+      <enabled>true</enabled>
+      <topics>
+        <booster/sensor_data>
+          <enabled>true</enabled>
+          <use_header_stamp>false</use_header_stamp>
+        </booster/sensor_data>
+      </topics>
+    </ros2>
+  </data_sources>
+  <plot_areas>
+    <plot_area_0>
+      <geometry>
+        <x>0</x>
+        <y>0</y>
+        <width>700</width>
+        <height>300</height>
+      </geometry>
+      <name>IMU Data</name>
+      <curves>
+        <curve_0>
+          <name>IMU RPY</name>
+          <plot_style>Lines</plot_style>
+          <color>#FF0000</color>
+          <sources>
+            <source_0>/booster/sensor_data/imu_rpy[0]</source_0>
+            <source_1>/booster/sensor_data/imu_rpy[1]</source_1>
+            <source_2>/booster/sensor_data/imu_rpy[2]</source_2>
+          </sources>
+        </curve_0>
+        <curve_1>
+          <name>IMU Gyro</name>
+          <plot_style>Lines</plot_style>
+          <color>#00FF00</color>
+          <sources>
+            <source_0>/booster/sensor_data/imu_gyro[0]</source_0>
+            <source_1>/booster/sensor_data/imu_gyro[1]</source_1>
+            <source_2>/booster/sensor_data/imu_gyro[2]</source_2>
+          </sources>
+        </curve_1>
+        <curve_2>
+          <name>IMU Acc</name>
+          <plot_style>Lines</plot_style>
+          <color>#0000FF</color>
+          <sources>
+            <source_0>/booster/sensor_data/imu_acc[0]</source_0>
+            <source_1>/booster/sensor_data/imu_acc[1]</source_1>
+            <source_2>/booster/sensor_data/imu_acc[2]</source_2>
+          </sources>
+        </curve_2>
+      </curves>
+    </plot_area_0>
+    <plot_area_1>
+      <geometry>
+        <x>700</x>
+        <y>0</y>
+        <width>700</width>
+        <height>300</height>
+      </geometry>
+      <name>Joint Positions (First 6)</name>
+      <curves>
+        <curve_0>
+          <name>Joint 0-2</name>
+          <plot_style>Lines</plot_style>
+          <color>#FF8000</color>
+          <sources>
+            <source_0>/booster/sensor_data/joint_positions[0]</source_0>
+            <source_1>/booster/sensor_data/joint_positions[1]</source_1>
+            <source_2>/booster/sensor_data/joint_positions[2]</source_2>
+          </sources>
+        </curve_0>
+        <curve_1>
+          <name>Joint 3-5</name>
+          <plot_style>Lines</plot_style>
+          <color>#8000FF</color>
+          <sources>
+            <source_0>/booster/sensor_data/joint_positions[3]</source_0>
+            <source_1>/booster/sensor_data/joint_positions[4]</source_1>
+            <source_2>/booster/sensor_data/joint_positions[5]</source_2>
+          </sources>
+        </curve_1>
+      </curves>
+    </plot_area_1>
+    <plot_area_2>
+      <geometry>
+        <x>0</x>
+        <y>300</y>
+        <width>700</width>
+        <height>300</height>
+      </geometry>
+      <name>Joint Velocities (First 6)</name>
+      <curves>
+        <curve_0>
+          <name>Joint Vel 0-2</name>
+          <plot_style>Lines</plot_style>
+          <color>#FF0080</color>
+          <sources>
+            <source_0>/booster/sensor_data/joint_velocities[0]</source_0>
+            <source_1>/booster/sensor_data/joint_velocities[1]</source_1>
+            <source_2>/booster/sensor_data/joint_velocities[2]</source_2>
+          </sources>
+        </curve_0>
+        <curve_1>
+          <name>Joint Vel 3-5</name>
+          <plot_style>Lines</plot_style>
+          <color>#0080FF</color>
+          <sources>
+            <source_0>/booster/sensor_data/joint_velocities[3]</source_0>
+            <source_1>/booster/sensor_data/joint_velocities[4]</source_1>
+            <source_2>/booster/sensor_data/joint_velocities[5]</source_2>
+          </sources>
+        </curve_1>
+      </curves>
+    </plot_area_2>
+    <plot_area_3>
+      <geometry>
+        <x>700</x>
+        <y>300</y>
+        <width>700</width>
+        <height>300</height>
+      </geometry>
+      <name>Joint Torques (First 6)</name>
+      <curves>
+        <curve_0>
+          <name>Joint Torque 0-2</name>
+          <plot_style>Lines</plot_style>
+          <color>#80FF00</color>
+          <sources>
+            <source_0>/booster/sensor_data/joint_torques[0]</source_0>
+            <source_1>/booster/sensor_data/joint_torques[1]</source_1>
+            <source_2>/booster/sensor_data/joint_torques[2]</source_2>
+          </sources>
+        </curve_0>
+        <curve_1>
+          <name>Joint Torque 3-5</name>
+          <plot_style>Lines</plot_style>
+          <color>#FF8000</color>
+          <sources>
+            <source_0>/booster/sensor_data/joint_torques[3]</source_0>
+            <source_1>/booster/sensor_data/joint_torques[4]</source_1>
+            <source_2>/booster/sensor_data/joint_torques[5]</source_2>
+          </sources>
+        </curve_1>
+      </curves>
+    </plot_area_3>
+  </plot_areas>
+</PlotJuggler>
+
+
+
+
+
+
+
+

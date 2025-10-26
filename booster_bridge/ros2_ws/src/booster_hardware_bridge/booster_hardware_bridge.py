@@ -110,12 +110,8 @@ class BoosterHardwareBridge(Node):
     def _load_config(self, config_file: str = None):
         """Load configuration file (from deploy.py)"""
         if config_file is None:
-            # Default config file path
-            config_file = os.path.join(
-                os.path.dirname(__file__), 
-                "config", 
-                "robot_config.yaml"
-            )
+            # Use the same config as deploy.py
+            config_file = "/home/romela5090/Han/booster_sim2real/deploy_booster/configs/T1.yaml"
         
         try:
             with open(config_file, "r", encoding="utf-8") as f:
@@ -274,7 +270,7 @@ class BoosterHardwareBridge(Node):
         return vector
     
     def motor_cmd_callback(self, msg: BoosterMotorCmd):
-        """Process motor commands from ROS2 (SAME AS deploy.py)"""
+        """Process motor commands from ROS2"""
         self.latest_motor_cmd = msg
         self.last_motor_cmd_time = time.time()
         self.motor_cmd_count += 1
@@ -285,30 +281,32 @@ class BoosterHardwareBridge(Node):
             return
         
         if BOOSTER_SDK_AVAILABLE:
-            # Convert BoosterMotorCmd to LowCmd (SAME AS deploy.py)
+            # Convert BoosterMotorCmd to LowCmd
             self.low_cmd.cmd_type = msg.cmd_type
             
-            # Set joint commands (SAME AS deploy.py)
+            # Set joint commands from received message
             for i in range(23):
                 self.low_cmd.motor_cmd[i].q = msg.joint_positions[i]
                 self.low_cmd.motor_cmd[i].dq = msg.joint_velocities[i]
                 self.low_cmd.motor_cmd[i].tau = msg.joint_torques[i]
                 self.low_cmd.motor_cmd[i].kp = msg.joint_kp[i]
                 self.low_cmd.motor_cmd[i].kd = msg.joint_kd[i]
-                self.low_cmd.motor_cmd[i].weight = msg.joint_weight[i]
+                # Note: weight is not in BoosterMotorCmd message, using default
+                self.low_cmd.motor_cmd[i].weight = 1.0
             
-            # Handle parallel mechanism (SAME AS deploy.py)
+            # Handle parallel mechanism joints (torque control)
             if "parallel_mech_indexes" in self.cfg.get("mech", {}):
                 for i in self.cfg["mech"]["parallel_mech_indexes"]:
+                    # For parallel mechanism joints, use position feedback and torque control
                     self.low_cmd.motor_cmd[i].q = self.dof_pos_latest[i]
                     self.low_cmd.motor_cmd[i].tau = np.clip(
-                        (msg.joint_positions[i] - self.dof_pos_latest[i]) * self.cfg["common"]["stiffness"][i],
+                        (msg.joint_positions[i] - self.dof_pos_latest[i]) * msg.joint_kp[i],
                         -self.cfg["common"]["torque_limit"][i],
                         self.cfg["common"]["torque_limit"][i],
                     )
                     self.low_cmd.motor_cmd[i].kp = 0.0
             
-            # Send to robot (SAME AS deploy.py)
+            # Send to robot
             self.low_cmd_publisher.Write(self.low_cmd)
         else:
             # In simulation mode, just log the command
@@ -370,23 +368,30 @@ class BoosterHardwareBridge(Node):
         self.logger.info("Custom mode activated")
     
     def _create_prepare_cmd(self):
-        """Create prepare command (SAME AS deploy.py)"""
+        """Create prepare command for robot initialization"""
         # Initialize command
         self.low_cmd.cmd_type = 0  # SERIAL
         
-        # Set prepare parameters (SAME AS deploy.py)
+        # Set prepare parameters from config
         prepare_cfg = self.cfg.get("prepare", {})
         if prepare_cfg:
-            for i in range(23):
-                self.low_cmd.motor_cmd[i].kp = prepare_cfg.get("stiffness", [0.0] * 23)[i]
-                self.low_cmd.motor_cmd[i].kd = prepare_cfg.get("damping", [0.0] * 23)[i]
-                self.low_cmd.motor_cmd[i].q = prepare_cfg.get("default_qpos", [0.0] * 23)[i]
+            # Use prepare-specific parameters
+            stiffness = prepare_cfg.get("stiffness", self.cfg["common"]["stiffness"])
+            damping = prepare_cfg.get("damping", self.cfg["common"]["damping"])
+            default_qpos = prepare_cfg.get("default_qpos", self.cfg["common"]["default_qpos"])
         else:
             # Use common parameters as fallback
-            for i in range(23):
-                self.low_cmd.motor_cmd[i].kp = self.cfg["common"]["stiffness"][i]
-                self.low_cmd.motor_cmd[i].kd = self.cfg["common"]["damping"][i]
-                self.low_cmd.motor_cmd[i].q = self.cfg["common"]["default_qpos"][i]
+            stiffness = self.cfg["common"]["stiffness"]
+            damping = self.cfg["common"]["damping"]
+            default_qpos = self.cfg["common"]["default_qpos"]
+        
+        for i in range(23):
+            self.low_cmd.motor_cmd[i].kp = stiffness[i]
+            self.low_cmd.motor_cmd[i].kd = damping[i]
+            self.low_cmd.motor_cmd[i].q = default_qpos[i]
+            self.low_cmd.motor_cmd[i].tau = 0.0
+            self.low_cmd.motor_cmd[i].dq = 0.0
+            self.low_cmd.motor_cmd[i].weight = 1.0
     
     def control_loop(self):
         """Main control loop with safety checks"""

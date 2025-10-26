@@ -16,8 +16,9 @@ ament_python_install_package(${PROJECT_NAME})
 
 # Install Python executables
 install(PROGRAMS
-  booster_policy_server.py
-  booster_remote_control.py
+
+  booster_rosbag_policy_processor.py
+  booster_policy
   DESTINATION lib/${PROJECT_NAME}
 )
 
