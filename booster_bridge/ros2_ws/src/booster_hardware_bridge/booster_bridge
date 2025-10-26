@@ -19,7 +19,7 @@ import sys
 from typing import Optional
 
 # Add deploy_booster to path to import command functions
-sys.path.append('/home/romela5090/Han/booster_sim2real/deploy_booster')
+sys.path.append('/home/booster/Workspace/booster_sim2real/deploy_booster')
 from utils.command import create_prepare_cmd
 
 # Import ROS2 message types
@@ -73,10 +73,14 @@ class BoosterHardwareBridge(Node):
         
         # Initialize state variables (from deploy.py)
         self.running = True
-        self.robot_mode = 0  # kDamping
+        self.robot_mode = 0  # kDamping (start in damping mode)
         self.latest_motor_cmd: Optional[BoosterMotorCmd] = None
         self.last_motor_cmd_time = 0.0
         self.motor_cmd_timeout = 0.1  # 100ms timeout
+        
+        # Mode flags for state tracking
+        self.custom_mode_started = False
+        self.rl_mode_started = False
         
         # Initialize sensor data arrays (from deploy.py)
         self._init_sensor_data_arrays()
@@ -106,7 +110,7 @@ class BoosterHardwareBridge(Node):
         """Load configuration file (from deploy.py)"""
         if config_file is None:
             # Use the same config as deploy.py
-            config_file = "/home/romela5090/Han/booster_sim2real/deploy_booster/configs/T1.yaml"
+            config_file = "/home/booster/Workspace/booster_sim2real/deploy_booster/configs/T1.yaml"
         
         try:
             with open(config_file, "r", encoding="utf-8") as f:
@@ -149,7 +153,6 @@ class BoosterHardwareBridge(Node):
         
         # Add mode switching state
         self.custom_mode_started = False
-        self.prep_mode_started = False
 
     
     def _init_booster_sdk(self):
@@ -195,6 +198,10 @@ class BoosterHardwareBridge(Node):
     
     def _low_state_handler(self, low_state_msg: LowState):
         """Process sensor data from Booster SDK (SAME AS deploy.py)"""
+        # Debug: Print array sizes
+        self.logger.debug(f"Low state received - motor_state_serial length: {len(low_state_msg.motor_state_serial)}")
+        self.logger.debug(f"dof_pos_latest size: {len(self.dof_pos_latest)}, dof_pos size: {len(self.dof_pos)}")
+        
         # Safety check (SAME AS deploy.py)
         if abs(low_state_msg.imu_state.rpy[0]) > 1.0 or abs(low_state_msg.imu_state.rpy[1]) > 1.0:
             self.logger.warning("IMU base rpy values are too large: {}".format(low_state_msg.imu_state.rpy))
@@ -202,7 +209,9 @@ class BoosterHardwareBridge(Node):
             return
         
         # Update latest joint positions (SAME AS deploy.py)
+        self.logger.debug(f"Updating joint positions, motor_state_serial length: {len(low_state_msg.motor_state_serial)}, dof_pos_latest length: {len(self.dof_pos_latest)}")
         for i, motor in enumerate(low_state_msg.motor_state_serial):
+            self.logger.debug(f"Updating joint {i}, dof_pos_latest length: {len(self.dof_pos_latest)}")
             self.dof_pos_latest[i] = motor.q
         
         self.base_ang_vel[:] = low_state_msg.imu_state.gyro
@@ -220,6 +229,8 @@ class BoosterHardwareBridge(Node):
         sensor_data.imu_acc = list(low_state_msg.imu_state.acc)
         
         # Joint data (SAME AS deploy.py)
+        self.logger.debug(f"Setting sensor data joint arrays, motor_state_serial length: {len(low_state_msg.motor_state_serial)}")
+        self.logger.debug(f"sensor_data.joint_positions length: {len(sensor_data.joint_positions)}")
         for i, motor in enumerate(low_state_msg.motor_state_serial):
             sensor_data.joint_positions[i] = motor.q
             sensor_data.joint_velocities[i] = motor.dq
@@ -233,14 +244,43 @@ class BoosterHardwareBridge(Node):
         self.sensor_data_count += 1
     
     def motor_cmd_callback(self, msg: BoosterMotorCmd):
-        """Process motor commands from ROS2"""
+        """Process motor commands from ROS2 - only in RL mode"""
+        # Only accept motor commands when in RL mode (2)
+        if self.robot_mode != 2:
+            if not hasattr(self, 'motor_cmd_rejected_warned') or not self.motor_cmd_rejected_warned:
+                mode_names = {0: "Damping", 1: "Custom", 2: "RL"}
+                self.logger.warning(f"Motor command rejected - robot is in {mode_names[self.robot_mode]} mode, need RL mode")
+                self.motor_cmd_rejected_warned = True
+            return
+        
+        # Reset warning flag when in RL mode
+        if hasattr(self, 'motor_cmd_rejected_warned'):
+            self.motor_cmd_rejected_warned = False
+        
         self.latest_motor_cmd = msg
         self.last_motor_cmd_time = time.time()
         self.motor_cmd_count += 1
         
+        # Debug: Print array sizes
+        self.logger.info(f"Motor command received - joint_positions: {len(msg.joint_positions)}, joint_kp: {len(msg.joint_kp)}, joint_kd: {len(msg.joint_kd)}")
+        self.logger.info(f"dof_target size: {len(self.dof_target)}, filtered_dof_target size: {len(self.filtered_dof_target)}")
+        
         if BOOSTER_SDK_AVAILABLE:
+            # Initialize motor_cmd array if not already done
+            if len(self.low_cmd.motor_cmd) == 0:
+                self.logger.info("Initializing motor_cmd array with 23 MotorCmd objects")
+                motor_cmds = [MotorCmd() for _ in range(B1JointCnt)]
+                self.low_cmd.motor_cmd = motor_cmds
+                for i in range(B1JointCnt):
+                    self.low_cmd.motor_cmd[i].q = 0.0
+                    self.low_cmd.motor_cmd[i].dq = 0.0
+                    self.low_cmd.motor_cmd[i].tau = 0.0
+                    self.low_cmd.motor_cmd[i].kp = 0.0
+                    self.low_cmd.motor_cmd[i].kd = 0.0
+                    self.low_cmd.motor_cmd[i].weight = 0.0
+            
             # Convert BoosterMotorCmd to LowCmd
-            self.low_cmd.cmd_type = msg.cmd_type
+            #self.low_cmd.cmd_type = msg.cmd_type
             
             # Apply moving average filtering (from deploy.py)
             # Store new target positions
@@ -257,7 +297,9 @@ class BoosterHardwareBridge(Node):
                 self.filtered_dof_target = self.filtered_dof_target * 0.8 + self.dof_target * 0.2
             
             # Set joint commands from filtered targets
+            self.logger.info(f"Setting joint commands, motor_cmd array length: {len(self.low_cmd.motor_cmd)}")
             for i in range(23):
+                self.logger.debug(f"Setting motor_cmd[{i}], motor_cmd length: {len(self.low_cmd.motor_cmd)}")
                 self.low_cmd.motor_cmd[i].q = self.filtered_dof_target[i]
             
             # Handle parallel mechanism joints (torque control)
@@ -280,21 +322,46 @@ class BoosterHardwareBridge(Node):
     
     
     def robot_mode_callback(self, request, response):
-        """Handle robot mode switching - only sets variables, doesn't change mode directly"""
+        """Handle robot mode switching with proper state transitions"""
         try:
-            # Just set the mode variable - actual mode change happens in start functions
-            if request.mode in [0, 1, 2]:  # kDamping, kCustom, kPrep
-                self.robot_mode = request.mode
-                # Reset warning flag when mode changes
-                if hasattr(self, 'mode_warning_logged'):
-                    self.mode_warning_logged = False
-                response.success = True
-                response.message = f"Mode set to {request.mode} (use start functions to activate)"
-                self.logger.info(f"Robot mode set to: {request.mode}")
-            else:
+            target_mode = request.mode
+            current_mode = self.robot_mode
+            
+            # Define mode names for logging
+            mode_names = {0: "Damping", 1: "Custom", 2: "RL"}
+            
+            # Check if transition is valid
+            if not self._is_valid_mode_transition(current_mode, target_mode):
                 response.success = False
-                response.message = f"Invalid mode: {request.mode}"
-                self.logger.error(f"Invalid mode: {request.mode}")
+                response.message = f"Invalid transition from {mode_names[current_mode]} to {mode_names[target_mode]}"
+                self.logger.error(f"Invalid mode transition: {current_mode} -> {target_mode}")
+                return response
+            
+            # Execute mode transition
+            if BOOSTER_SDK_AVAILABLE:
+                success = self._execute_mode_transition(target_mode)
+                if not success:
+                    response.success = False
+                    response.message = f"Failed to switch to {mode_names[target_mode]} mode"
+                    return response
+            
+            # Update internal state
+            self.robot_mode = target_mode
+            
+            # Reset mode-specific flags
+            if target_mode == 0:  # Damping
+                self.custom_mode_started = False
+                self.rl_mode_started = False
+            elif target_mode == 1:  # Custom
+                self.rl_mode_started = False
+            
+            # Reset warning flags
+            if hasattr(self, 'mode_warning_logged'):
+                self.mode_warning_logged = False
+            
+            response.success = True
+            response.message = f"Successfully switched to {mode_names[target_mode]} mode"
+            self.logger.info(f"Robot mode changed: {mode_names[current_mode]} -> {mode_names[target_mode]}")
             
         except Exception as e:
             response.success = False
@@ -303,32 +370,116 @@ class BoosterHardwareBridge(Node):
         
         return response
     
-    def start_prep_mode_conditionally(self):
-        """Start prep mode (SAME AS deploy.py)"""
-        self.logger.info("Starting prep mode")
+    def _is_valid_mode_transition(self, current_mode, target_mode):
+        """Check if mode transition is valid based on state machine rules"""
+        # Can always go to damping (0) from any mode
+        if target_mode == 0:
+            return True
         
-        # Create prepare command using deploy_booster function
-        create_prepare_cmd(self.low_cmd, self.cfg)
+        # Can always go to custom (1) from any mode
+        if target_mode == 1:
+            return True
         
-        # Initialize target arrays (SAME AS deploy.py)
-        for i in range(B1JointCnt):
-            self.dof_target[i] = self.low_cmd.motor_cmd[i].q
-            self.filtered_dof_target[i] = self.low_cmd.motor_cmd[i].q
+        # Can only go to RL (2) from custom (1)
+        if target_mode == 2:
+            return current_mode == 1
         
-        # Send prepare command
-        self.low_cmd_publisher.Write(self.low_cmd) 
-        # Switch to prep mode
-        if BOOSTER_SDK_AVAILABLE:
-            self.client.ChangeMode(RobotMode.kPrepare)
-        
-        self.prep_mode_started = True
-        self.logger.info("Prep mode activated")
+        return False
     
-    def start_custom_mode_conditionally(self):
-        """Start custom mode (SAME AS deploy.py)"""
-        self.logger.info("Starting custom mode")
+    def _execute_mode_transition(self, target_mode):
+        """Execute the actual mode transition using Booster SDK"""
+        try:
+            if not BOOSTER_SDK_AVAILABLE:
+                self.logger.error("Booster SDK not available - cannot execute mode transition")
+                return False
+            
+            if target_mode == 0:  # Damping
+                self.logger.info("Executing Damping mode transition...")
+                self.client.ChangeMode(RobotMode.kDamping)
+                self.logger.info("Switched to Damping mode")
+                
+            elif target_mode == 1:  # Custom
+                self.logger.info("Executing Custom mode transition...")
+                # Create prepare command and send it
+                self._create_prepare_cmd()
+                self.logger.info("Sending prepare command...")
+                self.low_cmd_publisher.Write(self.low_cmd)
+                self.client.ChangeMode(RobotMode.kCustom)
+                self.logger.info("Switched to Custom mode")
+                
+            elif target_mode == 2:  # RL
+                self.logger.info("Executing RL mode transition...")
+                # Create prepare command and send it
+                self._create_prepare_cmd()
+                self.logger.info("Sending prepare command...")
+                self.low_cmd_publisher.Write(self.low_cmd)
+                self.client.ChangeMode(RobotMode.kCustom)  # RL uses Custom mode in SDK
+                self.logger.info("Switched to RL mode")
+            
+            return True
+            
+        except Exception as e:
+            self.logger.error(f"Failed to execute mode transition to {target_mode}: {e}")
+            import traceback
+            self.logger.error(f"Traceback: {traceback.format_exc()}")
+            return False
+    
+    def _create_prepare_cmd(self):
+        """Create prepare command (SAME AS deploy.py)"""
+        # Initialize command
+        self.low_cmd.cmd_type = LowCmdType.SERIAL
         
-        start_time = time.perf_counter()
+        # Initialize motor_cmd array if not already done
+        if len(self.low_cmd.motor_cmd) == 0:
+            self.logger.info("Initializing motor_cmd array for prepare command")
+            motor_cmds = [MotorCmd() for _ in range(B1JointCnt)]
+            self.low_cmd.motor_cmd = motor_cmds
+            for i in range(B1JointCnt):
+                self.low_cmd.motor_cmd[i].q = 0.0
+                self.low_cmd.motor_cmd[i].dq = 0.0
+                self.low_cmd.motor_cmd[i].tau = 0.0
+                self.low_cmd.motor_cmd[i].kp = 0.0
+                self.low_cmd.motor_cmd[i].kd = 0.0
+                self.low_cmd.motor_cmd[i].weight = 0.0
+        
+        # Set prepare parameters (SAME AS deploy.py)
+        prepare_cfg = self.cfg.get("prepare", {})
+        if prepare_cfg:
+            for i in range(23):
+                self.low_cmd.motor_cmd[i].kp = prepare_cfg.get("stiffness", [0.0] * 23)[i]
+                self.low_cmd.motor_cmd[i].kd = prepare_cfg.get("damping", [0.0] * 23)[i]
+                self.low_cmd.motor_cmd[i].q = prepare_cfg.get("default_qpos", [0.0] * 23)[i]
+        else:
+            # Use common parameters as fallback
+            for i in range(23):
+                self.low_cmd.motor_cmd[i].kp = self.cfg["common"]["stiffness"][i]
+                self.low_cmd.motor_cmd[i].kd = self.cfg["common"]["damping"][i]
+                self.low_cmd.motor_cmd[i].q = self.cfg["common"]["default_qpos"][i]
+    
+    # def start_custom_mode_conditionally(self):
+    #     """Start custom mode (SAME AS deploy.py) - COMMENTED OUT"""
+    #     self.logger.info("Starting custom mode")
+    #     
+    #     # Create prepare command using deploy_booster function
+    #     create_prepare_cmd(self.low_cmd, self.cfg)
+    #     
+    #     # Initialize target arrays (SAME AS deploy.py)
+    #     for i in range(B1JointCnt):
+    #         self.dof_target[i] = self.low_cmd.motor_cmd[i].q
+    #         self.filtered_dof_target[i] = self.low_cmd.motor_cmd[i].q
+    #     
+    #     # Send prepare command
+    #     self._send_cmd(self.low_cmd)
+    #     # Switch to custom mode
+    #     if BOOSTER_SDK_AVAILABLE:
+    #         self.client.ChangeMode(RobotMode.kCustom)
+    #     
+    #     self.custom_mode_started = True
+    #     self.logger.info("Custom mode activated")
+    
+    def start_rl_mode_conditionally(self):
+        """Start RL mode (same as deploy.py)"""
+        self.logger.info("Starting RL mode")
         
         # Create prepare command using deploy_booster function
         create_prepare_cmd(self.low_cmd, self.cfg)
@@ -339,54 +490,43 @@ class BoosterHardwareBridge(Node):
             self.filtered_dof_target[i] = self.low_cmd.motor_cmd[i].q
         
         # Send prepare command
-        self.low_cmd_publisher.Write(self.low_cmd) 
-        # Switch to custom mode
+        self._send_cmd(self.low_cmd)
+        # Switch to custom mode (RL uses custom mode in SDK)
         if BOOSTER_SDK_AVAILABLE:
             self.client.ChangeMode(RobotMode.kCustom)
         
-        self.custom_mode_started = True
-        self.logger.info("Custom mode activated")
+        self.rl_mode_started = True
+        self.logger.info("RL mode activated")
     
     def control_loop(self):
-        """Main control loop - handles all control logic (SAME AS deploy.py)"""
+        """Main control loop - handles all control logic"""
         if not self.running:
             return
         
         current_time = time.time()
         
-        # 1. Mode management - handle mode transitions
-        if self.robot_mode == 2 and not self.prep_mode_started:
-            self.logger.info("Starting prep mode...")
-            self.start_prep_mode_conditionally()
-        elif self.robot_mode == 1 and not self.custom_mode_started:
-            # Only allow custom mode if prep mode was completed first
-            if self.prep_mode_started:
-                self.logger.info("Starting custom mode...")
-                self.start_custom_mode_conditionally()
-            else:
-                self.logger.warning("Cannot start custom mode - must complete prep mode first")
-        
-        # 2. Send motor commands (if in custom mode)
+        # 1. Send motor commands (only if in RL mode)
         self._send_motor_commands()
         
-        # 3. Safety checks
+        # 2. Safety checks
         self._check_motor_command_timeout(current_time)
         self._check_joint_limits()
         
-        # 4. Statistics logging
+        # 3. Statistics logging
         if current_time - self.last_stats_time > 10.0:  # Every 10 seconds
             self._log_statistics()
             self.last_stats_time = current_time
     
     def _send_motor_commands(self):
-        """Send motor commands to robot (only in custom mode)"""
-        # Only send commands if robot is in custom mode and SDK is available
-        if BOOSTER_SDK_AVAILABLE and self.robot_mode == 1:  # kCustom
-            self.low_cmd_publisher.Write(self.low_cmd)
-        elif self.robot_mode != 1:
-            # Log when not in custom mode (for debugging)
+        """Send motor commands to robot (only in RL mode)"""
+        # Only send commands if robot is in RL mode and SDK is available
+        if BOOSTER_SDK_AVAILABLE and self.robot_mode == 2:  # kRL
+            self.low_cmd.cmd_type = LowCmdType.PARALLEL
+            self._send_cmd(self.low_cmd)
+        elif self.robot_mode != 2:
+            # Log when not in RL mode (for debugging)
             if not hasattr(self, 'mode_warning_logged') or not self.mode_warning_logged:
-                self.logger.debug(f"Not sending motor commands - robot mode: {self.robot_mode} (need mode 1 for custom)")
+                self.logger.debug(f"Not sending motor commands - robot mode: {self.robot_mode} (need mode 2 for RL)")
                 self.mode_warning_logged = True
    
     def _check_motor_command_timeout(self, current_time):
@@ -438,6 +578,11 @@ class BoosterHardwareBridge(Node):
                 self.logger.error(f"Failed to switch to damping mode: {e}")
     
     
+    def _send_cmd(self, cmd: LowCmd):
+        """Send command to robot (wrapper function like deploy.py)"""
+        self.low_cmd_publisher.Write(cmd)
+    
+    
     def _log_statistics(self):
         """Log system statistics"""
         self.logger.info("=" * 50)
@@ -486,9 +631,11 @@ def main(args=None):
         time.sleep(2)
         print("Initialization complete.")
         print("Use ROS2 service calls to control robot modes:")
-        print("  ros2 service call /booster/robot_mode '{mode: 0}'  # Damping mode")
-        print("  ros2 service call /booster/robot_mode '{mode: 2}'  # Prep mode (required before custom)")
-        print("  ros2 service call /booster/robot_mode '{mode: 1}'  # Custom mode (requires prep mode first)")
+        print("  ros2 service call /booster/robot_mode '{mode: 0}'  # Damping mode (default)")
+        print("  ros2 service call /booster/robot_mode '{mode: 1}'  # Custom mode")
+        print("  ros2 service call /booster/robot_mode '{mode: 2}'  # RL mode (from custom)")
+        print("Mode transitions: Any->Damping, Any->Custom, Custom->RL")
+        print("Motor commands are only processed in RL mode (mode 2).")
 
         # Handle shutdown gracefully
         def shutdown_handler():

@@ -21,6 +21,7 @@ install(PROGRAMS
   booster_data_plotter.py
   booster_web_plotter.py
   booster_sensor_publisher.py
+  booster_sensor_data
   booster_bridge
   DESTINATION lib/${PROJECT_NAME}
 )

@@ -1,0 +1,233 @@
+#!/usr/bin/env python3
+
+"""
+Booster Sensor Data Node
+Collects sensor data from the robot and publishes it to ROS2 topics
+"""
+
+import rclpy
+from rclpy.node import Node
+from rclpy.qos import QoSProfile, ReliabilityPolicy, DurabilityPolicy
+import numpy as np
+import time
+import logging
+import yaml
+import os
+import sys
+from typing import Optional
+
+# Import ROS2 message types
+from booster_msgs.msg import BoosterSensorData
+
+# Import Booster SDK
+try:
+    from booster_robotics_sdk_python import (
+        ChannelFactory,
+        B1LowStateSubscriber,
+        LowState,
+        B1JointCnt,
+    )
+    BOOSTER_SDK_AVAILABLE = True
+except ImportError:
+    BOOSTER_SDK_AVAILABLE = False
+    print("Warning: Booster SDK not available. Running in simulation mode.")
+
+
+class BoosterSensorDataNode(Node):
+    """
+    Simple sensor data collection node
+    Only collects and publishes sensor data from the robot
+    """
+    
+    def __init__(self, config_file: str = None):
+        super().__init__('booster_sensor_data')
+        
+        # Setup logging
+        self.logger = self.get_logger()
+        
+        # Load configuration
+        self.cfg = self._load_config(config_file)
+        
+        # Initialize sensor data arrays
+        self._init_sensor_data_arrays()
+        
+        # Initialize SDK communication
+        self._init_communication()
+        
+        # Setup ROS2 publisher
+        qos_profile = QoSProfile(
+            reliability=ReliabilityPolicy.BEST_EFFORT,
+            durability=DurabilityPolicy.VOLATILE,
+            depth=1
+        )
+        
+        self.sensor_data_publisher = self.create_publisher(
+            BoosterSensorData,
+            '/booster/sensor_data',
+            qos_profile
+        )
+        
+        # Statistics
+        self.sensor_data_count = 0
+        self.running = True
+        
+        self.logger.info('Booster Sensor Data Node initialized')
+        if BOOSTER_SDK_AVAILABLE:
+            self.logger.info('Running with Booster SDK')
+        else:
+            self.logger.info('Running in simulation mode')
+    
+    def _load_config(self, config_file: str = None):
+        """Load configuration file"""
+        if config_file is None:
+            config_file = "/home/booster/Workspace/booster_sim2real/deploy_booster/configs/T1.yaml"
+        
+        try:
+            with open(config_file, "r", encoding="utf-8") as f:
+                cfg = yaml.load(f.read(), Loader=yaml.FullLoader)
+            self.logger.info(f"Loaded configuration from {config_file}")
+            return cfg
+        except FileNotFoundError:
+            self.logger.warning(f"Config file {config_file} not found, using defaults")
+            return self._get_default_config()
+        except Exception as e:
+            self.logger.error(f"Failed to load config: {e}")
+            return self._get_default_config()
+    
+    def _get_default_config(self):
+        """Get default configuration"""
+        return {
+            "common": {
+                "dt": 0.002,
+                "stiffness": [20, 20, 20, 20, 20, 20, 20, 20, 20, 20, 200, 200, 200, 200, 200, 50, 50, 200, 200, 200, 200, 50, 50],
+                "damping": [0.2, 0.2, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 5, 5, 5, 5, 5, 3, 3, 5, 5, 5, 5, 3, 3],
+                "default_qpos": [0, 0, 0.2, -1.35, 0, -0.5, 0.2, 1.35, 0, 0.5, 0, -0.2, 0, 0, 0.4, -0.25, 0, -0.2, 0, 0, 0.4, -0.25, 0],
+                "torque_limit": [7, 7, 10, 10, 10, 10, 10, 10, 10, 10, 30, 60, 25, 30, 60, 24, 15, 60, 25, 30, 60, 24, 15]
+            }
+        }
+    
+    def _init_sensor_data_arrays(self):
+        """Initialize sensor data arrays"""
+        self.base_ang_vel = np.zeros(3, dtype=np.float32)
+        self.dof_pos = np.zeros(B1JointCnt, dtype=np.float32)
+        self.dof_vel = np.zeros(B1JointCnt, dtype=np.float32)
+        self.dof_pos_latest = np.zeros(B1JointCnt, dtype=np.float32)
+    
+    def _init_communication(self):
+        """Initialize SDK communication"""
+        if BOOSTER_SDK_AVAILABLE:
+            try:
+                # Initialize network interface
+                ChannelFactory.Instance().Init(0, "eth0")
+                
+                # Create state subscriber
+                self.low_state_subscriber = B1LowStateSubscriber(self._low_state_handler)
+                self.low_state_subscriber.InitChannel()
+                
+                self.logger.info('SDK communication initialized successfully')
+                
+            except Exception as e:
+                self.logger.error(f'Failed to initialize SDK communication: {str(e)}')
+                self.running = False
+        else:
+            self.logger.warning('SDK not available, sensor data will be simulated')
+    
+    def _low_state_handler(self, low_state_msg: LowState):
+        """Handle incoming sensor data from robot"""
+        try:
+            # Check for safety issues
+            if abs(low_state_msg.imu_state.rpy[0]) > 1.0 or abs(low_state_msg.imu_state.rpy[1]) > 1.0:
+                self.logger.warning("IMU base rpy values are too large: {}".format(low_state_msg.imu_state.rpy))
+                return
+            
+            # Update latest joint positions
+            for i, motor in enumerate(low_state_msg.motor_state_serial):
+                self.dof_pos_latest[i] = motor.q
+            
+            # Update sensor data arrays
+            self.base_ang_vel[:] = low_state_msg.imu_state.gyro
+            
+            for i, motor in enumerate(low_state_msg.motor_state_serial):
+                self.dof_pos[i] = motor.q
+                self.dof_vel[i] = motor.dq
+            
+            # Convert LowState to BoosterSensorData
+            sensor_data = BoosterSensorData()
+            
+            # IMU data
+            sensor_data.imu_rpy = list(low_state_msg.imu_state.rpy)
+            sensor_data.imu_gyro = list(low_state_msg.imu_state.gyro)
+            sensor_data.imu_acc = list(low_state_msg.imu_state.acc)
+            
+            # Joint data
+            for i, motor in enumerate(low_state_msg.motor_state_serial):
+                sensor_data.joint_positions[i] = motor.q
+                sensor_data.joint_velocities[i] = motor.dq
+                sensor_data.joint_torques[i] = motor.tau_est
+            
+            # Timestamp
+            sensor_data.timestamp = self.get_clock().now().to_msg()
+            
+            # Publish to ROS2
+            self.sensor_data_publisher.publish(sensor_data)
+            self.sensor_data_count += 1
+            
+            # Log statistics every 1000 messages
+            if self.sensor_data_count % 1000 == 0:
+                self.logger.info(f'Published {self.sensor_data_count} sensor data messages')
+            
+        except Exception as e:
+            self.logger.error(f'Error processing sensor data: {str(e)}')
+    
+    def cleanup(self):
+        """Cleanup resources"""
+        self.running = False
+        
+        # Close SDK channels
+        if hasattr(self, "low_state_subscriber"):
+            try:
+                self.low_state_subscriber.CloseChannel()
+                self.logger.info("SDK channels closed")
+            except Exception as e:
+                self.logger.error(f"Error closing SDK channels: {e}")
+        
+        self.logger.info("Booster Sensor Data Node cleanup completed")
+
+
+def main(args=None):
+    rclpy.init(args=args)
+    
+    try:
+        # Parse command line arguments for config file
+        import argparse
+        parser = argparse.ArgumentParser(description='Booster Sensor Data Node')
+        parser.add_argument('--config', type=str, help='Path to configuration file')
+        args = parser.parse_args()
+        
+        node = BoosterSensorDataNode(config_file=args.config)
+        
+        # Wait for channels to initialize
+        time.sleep(2)
+        
+        # Handle shutdown gracefully
+        def shutdown_handler():
+            node.cleanup()
+            rclpy.shutdown()
+        
+        import signal
+        signal.signal(signal.SIGINT, lambda sig, frame: shutdown_handler())
+        signal.signal(signal.SIGTERM, lambda sig, frame: shutdown_handler())
+        
+        rclpy.spin(node)
+        
+    except KeyboardInterrupt:
+        pass
+    except Exception as e:
+        print(f"Error: {e}")
+    finally:
+        if rclpy.ok():
+            rclpy.shutdown()
+
+
+if __name__ == '__main__':
+    main()

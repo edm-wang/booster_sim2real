@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 
 """
-Launch file for Booster Hardware Bridge
-Runs the hardware bridge node that interfaces with the robot
+Launch file for Booster Data Recording and Plotting
+Launches sensor data node and data plotter for real-time visualization
 """
 
 from launch import LaunchDescription
@@ -19,23 +19,36 @@ def generate_launch_description():
         description='Path to configuration file'
     )
     
-    # Booster Hardware Bridge Node
-    booster_bridge_node = Node(
+    # Booster Sensor Data Node
+    sensor_data_node = Node(
         package='booster_hardware_bridge',
-        executable='booster_bridge',
-        name='booster_bridge',
+        executable='booster_sensor_data',
+        name='booster_sensor_data',
         output='screen',
         parameters=[{
             'config_file': LaunchConfiguration('config_file'),
         }],
         remappings=[
             ('/booster/sensor_data', '/booster/sensor_data'),
-            ('/booster/motor_cmd', '/booster/motor_cmd'),
-            ('/booster/robot_mode', '/booster/robot_mode'),
+        ]
+    )
+    
+    # Booster Data Plotter Node
+    data_plotter_node = Node(
+        package='booster_hardware_bridge',
+        executable='booster_data_plotter',
+        name='booster_data_plotter',
+        output='screen',
+        parameters=[{
+            'config_file': LaunchConfiguration('config_file'),
+        }],
+        remappings=[
+            ('/booster/sensor_data', '/booster/sensor_data'),
         ]
     )
     
     return LaunchDescription([
         config_file_arg,
-        booster_bridge_node,
+        sensor_data_node,
+        data_plotter_node,
     ])
