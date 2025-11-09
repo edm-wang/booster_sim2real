@@ -169,44 +169,47 @@ class Policy:
             # Fallback: use zero or estimate from dof_vel if available
             local_linvel = np.zeros(3, dtype=np.float32)
         
-        # Construct observation (matching play_t1_joystick.py format)
-        # 1. Local linear velocity (3D)
+        # Construct observation (matching play_t1_joystick.py format exactly)
+        # The ONNX model expects 85D observation: 3+3+3+3+23+23+23+4 = 85
+        
+        # 1. Local linear velocity (3D) - indices 0:3
         self.obs[0:3] = local_linvel
         
-        # 2. Gyroscope / angular velocity (3D)
+        # 2. Gyroscope / angular velocity (3D) - indices 3:6
         self.obs[3:6] = base_ang_vel
         
-        # 3. Gravity vector (3D) - use provided projected_gravity
+        # 3. Gravity vector (3D) - indices 6:9
         self.obs[6:9] = projected_gravity
         
-        # 4. Command (3D)
+        # 4. Command (3D) - indices 9:12
         command = self.smoothed_commands.copy()
         if np.linalg.norm(command) < 0.01:
             command = np.zeros(3)
         self.obs[9:12] = command
         
-        # 5. Joint angles relative to default (12D)
-        # Based on XML analysis: dof_pos contains all 23 joints (indices 0-22)
-        # Lower body joints start at index 11: Left_Hip_Pitch, Left_Hip_Roll, Left_Hip_Yaw,
-        #   Left_Knee_Pitch, Left_Ankle_Pitch, Left_Ankle_Roll,
-        #   Right_Hip_Pitch, Right_Hip_Roll, Right_Hip_Yaw,
-        #   Right_Knee_Pitch, Right_Ankle_Pitch, Right_Ankle_Roll
-        # Note: play_t1_joystick.py zeros head joints (indices 0-1 of all 23 joints),
-        #   but since we're using only lower body (12D), we don't need to zero anything here
-        joint_angles_rel = (dof_pos[11:] - self.default_dof_pos[11:]).astype(np.float32)
-        self.obs[12:24] = joint_angles_rel
+        # 5. Joint angles relative to default (23D) - indices 12:35
+        # Use ALL 23 joints (matching play_t1_joystick.py which uses qpos[7:])
+        # Zero the first 2 joints (head joints: AAHead_yaw, Head_pitch)
+        joint_angles_rel = (dof_pos - self.default_dof_pos).astype(np.float32)
+        joint_angles_rel[:2] = 0.0  # Zero head joints (indices 0-1)
+        self.obs[12:35] = joint_angles_rel
         
-        # 6. Joint velocities (12D) - lower body joints only
-        joint_vel = dof_vel[11:].astype(np.float32)
-        self.obs[24:36] = joint_vel
+        # 6. Joint velocities (23D) - indices 35:58
+        # Use ALL 23 joint velocities (matching play_t1_joystick.py which uses qvel[6:])
+        # Zero the first 2 joint velocities (head joints)
+        joint_vel = dof_vel.astype(np.float32)
+        joint_vel[:2] = 0.0  # Zero head joint velocities (indices 0-1)
+        self.obs[35:58] = joint_vel
         
-        # 7. Last action (12D)
-        self.obs[36:48] = self.last_action
+        # 7. Last action (23D) - indices 58:81
+        # The model outputs 23D actions (all joints)
+        self.obs[58:81] = self.last_action
         
-        # 8. Phase (2D) - cos and sin of phase
+        # 8. Phase (4D) - indices 81:85
+        # Use cos/sin for both left and right phases (matching play_t1_joystick.py)
         ph = self.phase if np.linalg.norm(command) >= 0.01 else np.ones(2) * np.pi
-        phase_encoding = np.concatenate([np.cos(ph), np.sin(ph)])
-        self.obs[48:50] = phase_encoding
+        phase_encoding = np.concatenate([np.cos(ph), np.sin(ph)]).astype(np.float32)
+        self.obs[81:85] = phase_encoding
 
         # Run ONNX inference
         onnx_input = {self._input_name: self.obs.reshape(1, -1).astype(np.float32)}
@@ -224,7 +227,8 @@ class Policy:
         self.last_action[:] = self.actions.copy()
         
         # Compute DOF targets: default + scaled action
+        # The model outputs 23D actions (all joints), so apply to all joints
         self.dof_targets[:] = self.default_dof_pos
-        self.dof_targets[11:] += self.cfg["policy"]["control"]["action_scale"] * self.actions
+        self.dof_targets[:] += self.cfg["policy"]["control"]["action_scale"] * self.actions
 
         return self.dof_targets

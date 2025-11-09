@@ -35,8 +35,8 @@ common:
 
 policy:
   policy_path: "./models/t1_policy.onnx"
-  num_actions: 12
-  num_observations: 50
+  num_actions: 23
+  num_observations: 85
   gait_frequency: 1.5
 
   normalization:
