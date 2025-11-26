@@ -19,7 +19,7 @@ from utils.command import create_prepare_cmd, create_first_frame_rl_cmd
 from utils.remote_control_service import RemoteControlService
 from utils.rotate import rotate_vector_inverse_rpy
 from utils.timer import TimerConfig, Timer
-from utils.policy import Policy
+from utils.policy_nolinvel import Policy
 
 
 class Controller:
@@ -100,6 +100,7 @@ class Controller:
 
     def _send_cmd(self, cmd: LowCmd):
         self.low_cmd_publisher.Write(cmd)
+        #pass
 
     def cleanup(self) -> None:
         """Cleanup resources."""
@@ -154,16 +155,21 @@ class Controller:
         self.logger.debug(f"Next start time: {self.next_inference_time}")
         start_time = time.perf_counter()
 
+        # Use commanded velocity as base_linvel to reduce velocity error
+        vx_cmd = self.remoteControlService.get_vx_cmd()
+        vy_cmd = self.remoteControlService.get_vy_cmd()
+        self.base_linvel[:] = [vx_cmd, vy_cmd, 0.0]  # Forward/lateral velocity, no vertical
+
         self.dof_target[:] = self.policy.inference(
             time_now=time_now,
             dof_pos=self.dof_pos,
             dof_vel=self.dof_vel,
             base_ang_vel=self.base_ang_vel,
             projected_gravity=self.projected_gravity,
-            vx=self.remoteControlService.get_vx_cmd(),
-            vy=self.remoteControlService.get_vy_cmd(),
+            vx=vx_cmd,
+            vy=vy_cmd,
             vyaw=self.remoteControlService.get_vyaw_cmd(),
-            base_linvel=self.base_linvel,  # May be zeros if not available
+            base_linvel=self.base_linvel,  # Now uses commanded velocity
             base_rpy=self.base_rpy,
         )
 
