@@ -16,7 +16,7 @@ from booster_robotics_sdk_python import (
 )
 
 from utils.command import create_prepare_cmd, create_first_frame_rl_cmd
-from utils.remote_control_service import RemoteControlService
+from utils.ros_vel_subscriber import ROSVelSubscriber
 from utils.rotate import rotate_vector_inverse_rpy
 from utils.timer import TimerConfig, Timer
 from utils.policy import Policy
@@ -33,7 +33,7 @@ class Controller:
             self.cfg = yaml.load(f.read(), Loader=yaml.FullLoader)
 
         # Initialize components
-        self.remoteControlService = RemoteControlService()
+        self.remoteControlService = ROSVelSubscriber(topic_name="vel_cmd", timeout=0.5)
         self.policy = Policy(cfg=self.cfg)
 
         self._init_timer()
@@ -98,7 +98,9 @@ class Controller:
 
     def cleanup(self) -> None:
         """Cleanup resources."""
-        self.remoteControlService.close()
+        self.running = False
+        if hasattr(self, "remoteControlService"):
+            self.remoteControlService.close()
         if hasattr(self, "low_cmd_publisher"):
             self.low_cmd_publisher.CloseChannel()
         if hasattr(self, "low_state_subscriber"):
@@ -235,3 +237,8 @@ if __name__ == "__main__":
         except KeyboardInterrupt:
             print("\nKeyboard interrupt received. Cleaning up...")
             controller.cleanup()
+        finally:
+            # Shutdown ROS2 if it was initialized
+            import rclpy
+            if rclpy.ok():
+                rclpy.shutdown()
